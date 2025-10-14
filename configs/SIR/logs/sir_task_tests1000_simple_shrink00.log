@@ -1,0 +1,30 @@
+2025-08-21 07:07:30.759774: E external/local_xla/xla/stream_executor/cuda/cuda_fft.cc:467] Unable to register cuFFT factory: Attempting to register factory for plugin cuFFT when one has already been registered
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+E0000 00:00:1755760050.782530   17261 cuda_dnn.cc:8579] Unable to register cuDNN factory: Attempting to register factory for plugin cuDNN when one has already been registered
+E0000 00:00:1755760050.789248   17261 cuda_blas.cc:1407] Unable to register cuBLAS factory: Attempting to register factory for plugin cuBLAS when one has already been registered
+W0000 00:00:1755760050.806111   17261 computation_placer.cc:177] computation placer already registered. Please check linkage and avoid linking the same target more than once.
+W0000 00:00:1755760050.806211   17261 computation_placer.cc:177] computation placer already registered. Please check linkage and avoid linking the same target more than once.
+W0000 00:00:1755760050.806256   17261 computation_placer.cc:177] computation placer already registered. Please check linkage and avoid linking the same target more than once.
+W0000 00:00:1755760050.806299   17261 computation_placer.cc:177] computation placer already registered. Please check linkage and avoid linking the same target more than once.
+INFO:2025-08-21 07:07:35,374:jax._src.xla_bridge:925: Unable to initialize backend 'rocm': module 'jaxlib.xla_extension' has no attribute 'GpuAllocatorConfig'
+I0821 07:07:35.374905 135311274193536 xla_bridge.py:925] Unable to initialize backend 'rocm': module 'jaxlib.xla_extension' has no attribute 'GpuAllocatorConfig'
+INFO:2025-08-21 07:07:35,376:jax._src.xla_bridge:925: Unable to initialize backend 'tpu': INTERNAL: Failed to open libtpu.so: libtpu.so: cannot open shared object file: No such file or directory
+I0821 07:07:35.376442 135311274193536 xla_bridge.py:925] Unable to initialize backend 'tpu': INTERNAL: Failed to open libtpu.so: libtpu.so: cannot open shared object file: No such file or directory
+2025-08-21 07:07:46.741775: W tensorflow/core/common_runtime/gpu/gpu_bfc_allocator.cc:47] Overriding orig_value setting because the TF_FORCE_GPU_ALLOW_GROWTH environment variable is set. Original config value was 0.
+I0000 00:00:1755760066.742029   17261 gpu_device.cc:2019] Created device /job:localhost/replica:0/task:0/device:GPU:0 with 437 MB memory:  -> device: 0, name: NVIDIA A100-SXM4-40GB, pci bus id: 0000:00:04.0, compute capability: 8.0
+🎯 Data-driven initialization: Using empirical covariance [-3. -3. -3. -3. -3. -3.]
+🎯 Computed theta bounds: θ_min=[-2.7992468 -1.4134555], θ_max=[1.4133558 2.816439 ]
+Computed empirical bias: [ 0.05283676  0.05493056  0.08317819  0.00868919  0.01954247 -2.6753716 ]
+Loading existing model from ./Data/simulator_nlpe_rqs_posterior_SIR_111111.eqx
+Training model...
+Starting staged training...
+Starting 4-stage training system...
+Stage 1: Training embedding networks...
+No embeddings needed for this dataset, skipping embedding training.
+Stage 2: Training simulator flow...
+Simulator training disabled by config (train_simulator=False).
+Stage 3: Posterior initialization...
+Stage 4: Joint training
+Training joint using SimplifiedPosteriorLoss (joint training)...
+Created 4 observed data batches of size ~250
+Simplified Loss Training:   0%|          | 0/300 [00:00<?, ?it/s]

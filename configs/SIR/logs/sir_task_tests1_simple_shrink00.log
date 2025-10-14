@@ -1,0 +1,207 @@
+2025-08-20 22:07:47.933558: E external/local_xla/xla/stream_executor/cuda/cuda_fft.cc:467] Unable to register cuFFT factory: Attempting to register factory for plugin cuFFT when one has already been registered
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+E0000 00:00:1755727667.955870    6850 cuda_dnn.cc:8579] Unable to register cuDNN factory: Attempting to register factory for plugin cuDNN when one has already been registered
+E0000 00:00:1755727667.962537    6850 cuda_blas.cc:1407] Unable to register cuBLAS factory: Attempting to register factory for plugin cuBLAS when one has already been registered
+W0000 00:00:1755727667.978759    6850 computation_placer.cc:177] computation placer already registered. Please check linkage and avoid linking the same target more than once.
+W0000 00:00:1755727667.978873    6850 computation_placer.cc:177] computation placer already registered. Please check linkage and avoid linking the same target more than once.
+W0000 00:00:1755727667.978916    6850 computation_placer.cc:177] computation placer already registered. Please check linkage and avoid linking the same target more than once.
+W0000 00:00:1755727667.978956    6850 computation_placer.cc:177] computation placer already registered. Please check linkage and avoid linking the same target more than once.
+INFO:2025-08-20 22:07:53,305:jax._src.xla_bridge:925: Unable to initialize backend 'rocm': module 'jaxlib.xla_extension' has no attribute 'GpuAllocatorConfig'
+I0820 22:07:53.305092 136432415277696 xla_bridge.py:925] Unable to initialize backend 'rocm': module 'jaxlib.xla_extension' has no attribute 'GpuAllocatorConfig'
+INFO:2025-08-20 22:07:53,306:jax._src.xla_bridge:925: Unable to initialize backend 'tpu': INTERNAL: Failed to open libtpu.so: libtpu.so: cannot open shared object file: No such file or directory
+I0820 22:07:53.306532 136432415277696 xla_bridge.py:925] Unable to initialize backend 'tpu': INTERNAL: Failed to open libtpu.so: libtpu.so: cannot open shared object file: No such file or directory
+2025-08-20 22:08:04.632504: W tensorflow/core/common_runtime/gpu/gpu_bfc_allocator.cc:47] Overriding orig_value setting because the TF_FORCE_GPU_ALLOW_GROWTH environment variable is set. Original config value was 0.
+I0000 00:00:1755727684.632729    6850 gpu_device.cc:2019] Created device /job:localhost/replica:0/task:0/device:GPU:0 with 8154 MB memory:  -> device: 0, name: NVIDIA A100-SXM4-40GB, pci bus id: 0000:00:04.0, compute capability: 8.0
+🎯 Data-driven initialization: Using empirical covariance [-3. -3. -3. -3. -3. -3.]
+🎯 Computed theta bounds: θ_min=[-2.7992468 -1.4134555], θ_max=[1.4133558 2.816439 ]
+Computed empirical bias: [ 0.00974048  1.0174003  -0.6246704   1.45069     1.5970114  -2.7201822 ]
+Loading existing model from ./Data/simulator_nlpe_rqs_posterior_SIR_111111.eqx
+Training model...
+Starting staged training...
+Starting 4-stage training system...
+Stage 1: Training embedding networks...
+No embeddings needed for this dataset, skipping embedding training.
+Stage 2: Training simulator flow...
+Simulator training disabled by config (train_simulator=False).
+Stage 3: Posterior initialization...
+Stage 4: Joint training
+Training joint using SimplifiedPosteriorLoss (joint training)...
+Created 1 observed data batches of size ~250
+Simplified Loss Training:   0%|          | 0/300 [00:00<?, ?it/s]Simplified Loss Training:   0%|          | 1/300 [00:21<1:48:49, 21.84s/it]Simplified Loss Training:   1%|          | 2/300 [00:22<45:38,  9.19s/it]  Simplified Loss Training:   1%|          | 3/300 [00:22<25:17,  5.11s/it]Simplified Loss Training:   1%|▏         | 4/300 [00:22<15:45,  3.19s/it]Simplified Loss Training:   2%|▏         | 5/300 [00:22<10:29,  2.13s/it]Simplified Loss Training:   2%|▏         | 6/300 [00:23<07:19,  1.49s/it]Simplified Loss Training:   2%|▏         | 7/300 [00:23<05:19,  1.09s/it]Simplified Loss Training:   3%|▎         | 8/300 [00:23<04:00,  1.21it/s]Simplified Loss Training:   3%|▎         | 9/300 [00:23<03:08,  1.55it/s]Simplified Loss Training:   3%|▎         | 10/300 [00:24<02:32,  1.90it/s]Simplified Loss Training:   4%|▎         | 11/300 [00:24<02:07,  2.26it/s]Simplified Loss Training:   4%|▍         | 12/300 [00:24<01:51,  2.59it/s]Simplified Loss Training:   4%|▍         | 13/300 [00:24<01:39,  2.89it/s]Simplified Loss Training:   5%|▍         | 14/300 [00:25<01:31,  3.13it/s]Simplified Loss Training:   5%|▌         | 15/300 [00:25<01:25,  3.33it/s]Simplified Loss Training:   5%|▌         | 16/300 [00:25<01:21,  3.49it/s]Simplified Loss Training:   6%|▌         | 17/300 [00:26<01:18,  3.61it/s]Simplified Loss Training:   6%|▌         | 18/300 [00:26<01:16,  3.69it/s]Simplified Loss Training:   6%|▋         | 19/300 [00:26<01:14,  3.76it/s]Simplified Loss Training:   7%|▋         | 20/300 [00:26<01:13,  3.80it/s]Simplified Loss Training:   7%|▋         | 21/300 [00:27<01:13,  3.81it/s]Simplified Loss Training:   7%|▋         | 22/300 [00:27<01:12,  3.83it/s]Simplified Loss Training:   8%|▊         | 23/300 [00:27<01:11,  3.86it/s]Simplified Loss Training:   8%|▊         | 24/300 [00:27<01:11,  3.87it/s]Simplified Loss Training:   8%|▊         | 25/300 [00:28<01:11,  3.87it/s]Simplified Loss Training:   9%|▊         | 26/300 [00:28<01:11,  3.83it/s]Simplified Loss Training:   9%|▉         | 27/300 [00:28<01:11,  3.81it/s]Simplified Loss Training:   9%|▉         | 28/300 [00:28<01:11,  3.80it/s]Simplified Loss Training:  10%|▉         | 29/300 [00:29<01:11,  3.81it/s]Simplified Loss Training:  10%|█         | 30/300 [00:29<01:11,  3.80it/s]Simplified Loss Training:  10%|█         | 31/300 [00:29<01:10,  3.80it/s]Simplified Loss Training:  11%|█         | 32/300 [00:29<01:11,  3.77it/s]Simplified Loss Training:  11%|█         | 33/300 [00:30<01:10,  3.77it/s]Simplified Loss Training:  11%|█▏        | 34/300 [00:30<01:10,  3.78it/s]Simplified Loss Training:  12%|█▏        | 35/300 [00:30<01:09,  3.81it/s]Simplified Loss Training:  12%|█▏        | 36/300 [00:30<01:09,  3.81it/s]Simplified Loss Training:  12%|█▏        | 37/300 [00:31<01:08,  3.83it/s]Simplified Loss Training:  13%|█▎        | 38/300 [00:31<01:08,  3.85it/s]Simplified Loss Training:  13%|█▎        | 39/300 [00:31<01:07,  3.85it/s]Simplified Loss Training:  13%|█▎        | 40/300 [00:31<01:07,  3.87it/s]Simplified Loss Training:  14%|█▎        | 41/300 [00:32<01:07,  3.86it/s]Simplified Loss Training:  14%|█▍        | 42/300 [00:32<01:06,  3.88it/s]Simplified Loss Training:  14%|█▍        | 43/300 [00:32<01:06,  3.89it/s]Simplified Loss Training:  15%|█▍        | 44/300 [00:33<01:05,  3.89it/s]Simplified Loss Training:  15%|█▌        | 45/300 [00:33<01:05,  3.90it/s]Simplified Loss Training:  15%|█▌        | 46/300 [00:33<01:05,  3.90it/s]Simplified Loss Training:  16%|█▌        | 47/300 [00:33<01:04,  3.90it/s]Simplified Loss Training:  16%|█▌        | 48/300 [00:34<01:04,  3.90it/s]Simplified Loss Training:  16%|█▋        | 49/300 [00:34<01:04,  3.90it/s]Simplified Loss Training:  17%|█▋        | 50/300 [00:34<01:04,  3.89it/s]Simplified Loss Training:  17%|█▋        | 51/300 [00:34<01:04,  3.87it/s]Simplified Loss Training:  17%|█▋        | 52/300 [00:35<01:03,  3.89it/s]Simplified Loss Training:  18%|█▊        | 53/300 [00:35<01:03,  3.89it/s]Simplified Loss Training:  18%|█▊        | 54/300 [00:35<01:03,  3.88it/s]Simplified Loss Training:  18%|█▊        | 55/300 [00:35<01:03,  3.86it/s]Simplified Loss Training:  19%|█▊        | 56/300 [00:36<01:03,  3.86it/s]Simplified Loss Training:  19%|█▉        | 57/300 [00:36<01:03,  3.82it/s]Simplified Loss Training:  19%|█▉        | 58/300 [00:36<01:03,  3.84it/s]Simplified Loss Training:  20%|█▉        | 59/300 [00:36<01:02,  3.85it/s]Simplified Loss Training:  20%|██        | 60/300 [00:37<01:02,  3.87it/s]Simplified Loss Training:  20%|██        | 61/300 [00:37<01:02,  3.85it/s]Simplified Loss Training:  21%|██        | 62/300 [00:37<01:01,  3.86it/s]Simplified Loss Training:  21%|██        | 63/300 [00:37<01:01,  3.88it/s]Simplified Loss Training:  21%|██▏       | 64/300 [00:38<01:00,  3.89it/s]Simplified Loss Training:  22%|██▏       | 65/300 [00:38<01:00,  3.90it/s]Simplified Loss Training:  22%|██▏       | 66/300 [00:38<01:00,  3.88it/s]Simplified Loss Training:  22%|██▏       | 67/300 [00:38<01:00,  3.88it/s]Simplified Loss Training:  23%|██▎       | 68/300 [00:39<00:59,  3.87it/s]Simplified Loss Training:  23%|██▎       | 69/300 [00:39<00:59,  3.88it/s]Simplified Loss Training:  23%|██▎       | 70/300 [00:39<00:59,  3.86it/s]Simplified Loss Training:  24%|██▎       | 71/300 [00:39<00:59,  3.87it/s]Simplified Loss Training:  24%|██▍       | 72/300 [00:40<00:59,  3.85it/s]Simplified Loss Training:  24%|██▍       | 73/300 [00:40<00:58,  3.85it/s]Simplified Loss Training:  25%|██▍       | 74/300 [00:40<00:58,  3.86it/s]Simplified Loss Training:  25%|██▌       | 75/300 [00:41<00:58,  3.86it/s]Simplified Loss Training:  25%|██▌       | 76/300 [00:41<00:57,  3.88it/s]Simplified Loss Training:  26%|██▌       | 77/300 [00:41<00:57,  3.89it/s]Simplified Loss Training:  26%|██▌       | 78/300 [00:41<00:57,  3.85it/s]Simplified Loss Training:  26%|██▋       | 79/300 [00:42<00:57,  3.82it/s]Simplified Loss Training:  27%|██▋       | 80/300 [00:42<00:57,  3.80it/s]Simplified Loss Training:  27%|██▋       | 81/300 [00:42<00:58,  3.77it/s]Simplified Loss Training:  27%|██▋       | 82/300 [00:42<00:57,  3.80it/s]Simplified Loss Training:  28%|██▊       | 83/300 [00:43<00:56,  3.82it/s]Simplified Loss Training:  28%|██▊       | 84/300 [00:43<00:56,  3.82it/s]Simplified Loss Training:  28%|██▊       | 85/300 [00:43<00:55,  3.84it/s]Simplified Loss Training:  29%|██▊       | 86/300 [00:43<00:55,  3.85it/s]Simplified Loss Training:  29%|██▉       | 87/300 [00:44<00:55,  3.87it/s]Simplified Loss Training:  29%|██▉       | 88/300 [00:44<00:55,  3.85it/s]Simplified Loss Training:  30%|██▉       | 89/300 [00:44<00:55,  3.83it/s]Simplified Loss Training:  30%|███       | 90/300 [00:44<00:54,  3.82it/s]Simplified Loss Training:  30%|███       | 91/300 [00:45<00:54,  3.82it/s]Simplified Loss Training:  31%|███       | 92/300 [00:45<00:54,  3.83it/s]Simplified Loss Training:  31%|███       | 93/300 [00:45<00:53,  3.84it/s]Simplified Loss Training:  31%|███▏      | 94/300 [00:45<00:53,  3.83it/s]Simplified Loss Training:  32%|███▏      | 95/300 [00:46<00:53,  3.83it/s]Simplified Loss Training:  32%|███▏      | 96/300 [00:46<00:53,  3.85it/s]Simplified Loss Training:  32%|███▏      | 97/300 [00:46<00:52,  3.86it/s]Simplified Loss Training:  33%|███▎      | 98/300 [00:47<00:52,  3.86it/s]Simplified Loss Training:  33%|███▎      | 99/300 [00:47<00:51,  3.88it/s]Simplified Loss Training:  33%|███▎      | 100/300 [00:47<00:51,  3.88it/s]Simplified Loss Training:  34%|███▎      | 101/300 [00:47<00:51,  3.87it/s]Simplified Loss Training:  34%|███▍      | 102/300 [00:48<00:51,  3.88it/s]Simplified Loss Training:  34%|███▍      | 103/300 [00:48<00:50,  3.88it/s]Simplified Loss Training:  35%|███▍      | 104/300 [00:48<00:50,  3.89it/s]Simplified Loss Training:  35%|███▌      | 105/300 [00:48<00:50,  3.88it/s]Simplified Loss Training:  35%|███▌      | 106/300 [00:49<00:49,  3.89it/s]Simplified Loss Training:  36%|███▌      | 107/300 [00:49<00:49,  3.89it/s]Simplified Loss Training:  36%|███▌      | 108/300 [00:49<00:49,  3.89it/s]Simplified Loss Training:  36%|███▋      | 109/300 [00:49<00:49,  3.89it/s]Simplified Loss Training:  37%|███▋      | 110/300 [00:50<00:48,  3.88it/s]Simplified Loss Training:  37%|███▋      | 111/300 [00:50<00:48,  3.86it/s]Simplified Loss Training:  37%|███▋      | 112/300 [00:50<00:48,  3.84it/s]Simplified Loss Training:  38%|███▊      | 113/300 [00:50<00:48,  3.82it/s]Simplified Loss Training:  38%|███▊      | 114/300 [00:51<00:48,  3.82it/s]Simplified Loss Training:  38%|███▊      | 115/300 [00:51<00:48,  3.81it/s]Simplified Loss Training:  39%|███▊      | 116/300 [00:51<00:48,  3.81it/s]Simplified Loss Training:  39%|███▉      | 117/300 [00:51<00:47,  3.81it/s]Simplified Loss Training:  39%|███▉      | 118/300 [00:52<00:47,  3.80it/s]Simplified Loss Training:  40%|███▉      | 119/300 [00:52<00:47,  3.79it/s]Simplified Loss Training:  40%|████      | 120/300 [00:52<00:47,  3.77it/s]Simplified Loss Training:  40%|████      | 121/300 [00:53<00:47,  3.75it/s]Simplified Loss Training:  41%|████      | 122/300 [00:53<00:47,  3.76it/s]Simplified Loss Training:  41%|████      | 123/300 [00:53<00:47,  3.75it/s]Simplified Loss Training:  41%|████▏     | 124/300 [00:53<00:46,  3.79it/s]Simplified Loss Training:  42%|████▏     | 125/300 [00:54<00:46,  3.79it/s]Simplified Loss Training:  42%|████▏     | 126/300 [00:54<00:46,  3.76it/s]Simplified Loss Training:  42%|████▏     | 127/300 [00:54<00:45,  3.79it/s]Simplified Loss Training:  43%|████▎     | 128/300 [00:54<00:45,  3.82it/s]Simplified Loss Training:  43%|████▎     | 129/300 [00:55<00:44,  3.84it/s]Simplified Loss Training:  43%|████▎     | 130/300 [00:55<00:44,  3.85it/s]Simplified Loss Training:  44%|████▎     | 131/300 [00:55<00:43,  3.86it/s]Simplified Loss Training:  44%|████▍     | 132/300 [00:55<00:43,  3.86it/s]Simplified Loss Training:  44%|████▍     | 133/300 [00:56<00:43,  3.88it/s]Simplified Loss Training:  45%|████▍     | 134/300 [00:56<00:42,  3.88it/s]Simplified Loss Training:  45%|████▌     | 135/300 [00:56<00:42,  3.89it/s]Simplified Loss Training:  45%|████▌     | 136/300 [00:56<00:42,  3.89it/s]Simplified Loss Training:  46%|████▌     | 137/300 [00:57<00:41,  3.88it/s]Simplified Loss Training:  46%|████▌     | 138/300 [00:57<00:41,  3.89it/s]Simplified Loss Training:  46%|████▋     | 139/300 [00:57<00:41,  3.90it/s]Simplified Loss Training:  47%|████▋     | 140/300 [00:57<00:40,  3.91it/s]Simplified Loss Training:  47%|████▋     | 141/300 [00:58<00:40,  3.88it/s]Simplified Loss Training:  47%|████▋     | 142/300 [00:58<00:40,  3.88it/s]Simplified Loss Training:  48%|████▊     | 143/300 [00:58<00:40,  3.89it/s]Simplified Loss Training:  48%|████▊     | 144/300 [00:58<00:40,  3.89it/s]Simplified Loss Training:  48%|████▊     | 145/300 [00:59<00:39,  3.89it/s]Simplified Loss Training:  49%|████▊     | 146/300 [00:59<00:39,  3.89it/s]Simplified Loss Training:  49%|████▉     | 147/300 [00:59<00:39,  3.88it/s]Simplified Loss Training:  49%|████▉     | 148/300 [01:00<00:39,  3.87it/s]Simplified Loss Training:  50%|████▉     | 149/300 [01:00<00:39,  3.86it/s]Simplified Loss Training:  50%|█████     | 150/300 [01:00<00:38,  3.86it/s]Simplified Loss Training:  50%|█████     | 151/300 [01:00<00:38,  3.85it/s]Simplified Loss Training:  51%|█████     | 152/300 [01:01<00:38,  3.87it/s]Simplified Loss Training:  51%|█████     | 153/300 [01:01<00:38,  3.83it/s]Simplified Loss Training:  51%|█████▏    | 154/300 [01:01<00:38,  3.81it/s]Simplified Loss Training:  52%|█████▏    | 155/300 [01:01<00:37,  3.83it/s]Simplified Loss Training:  52%|█████▏    | 156/300 [01:02<00:37,  3.85it/s]Simplified Loss Training:  52%|█████▏    | 157/300 [01:02<00:37,  3.85it/s]Simplified Loss Training:  53%|█████▎    | 158/300 [01:02<00:36,  3.84it/s]Simplified Loss Training:  53%|█████▎    | 159/300 [01:02<00:36,  3.86it/s]Simplified Loss Training:  53%|█████▎    | 160/300 [01:03<00:36,  3.86it/s]Simplified Loss Training:  54%|█████▎    | 161/300 [01:03<00:36,  3.84it/s]Simplified Loss Training:  54%|█████▍    | 162/300 [01:03<00:35,  3.85it/s]Simplified Loss Training:  54%|█████▍    | 163/300 [01:03<00:35,  3.87it/s]Simplified Loss Training:  55%|█████▍    | 164/300 [01:04<00:35,  3.88it/s]Simplified Loss Training:  55%|█████▌    | 165/300 [01:04<00:34,  3.86it/s]Simplified Loss Training:  55%|█████▌    | 166/300 [01:04<00:35,  3.82it/s]Simplified Loss Training:  56%|█████▌    | 167/300 [01:04<00:34,  3.82it/s]Simplified Loss Training:  56%|█████▌    | 168/300 [01:05<00:34,  3.80it/s]Simplified Loss Training:  56%|█████▋    | 169/300 [01:05<00:34,  3.78it/s]Simplified Loss Training:  57%|█████▋    | 170/300 [01:05<00:34,  3.77it/s]Simplified Loss Training:  57%|█████▋    | 171/300 [01:06<00:34,  3.76it/s]Simplified Loss Training:  57%|█████▋    | 172/300 [01:06<00:33,  3.77it/s]Simplified Loss Training:  58%|█████▊    | 173/300 [01:06<00:33,  3.75it/s]Simplified Loss Training:  58%|█████▊    | 174/300 [01:06<00:33,  3.79it/s]Simplified Loss Training:  58%|█████▊    | 175/300 [01:07<00:32,  3.81it/s]Simplified Loss Training:  59%|█████▊    | 176/300 [01:07<00:32,  3.81it/s]Simplified Loss Training:  59%|█████▉    | 177/300 [01:07<00:32,  3.82it/s]Simplified Loss Training:  59%|█████▉    | 178/300 [01:07<00:31,  3.83it/s]Simplified Loss Training:  60%|█████▉    | 179/300 [01:08<00:31,  3.83it/s]Simplified Loss Training:  60%|██████    | 180/300 [01:08<00:31,  3.84it/s]Simplified Loss Training:  60%|██████    | 181/300 [01:08<00:30,  3.84it/s]Simplified Loss Training:  61%|██████    | 182/300 [01:08<00:30,  3.86it/s]Simplified Loss Training:  61%|██████    | 183/300 [01:09<00:30,  3.86it/s]Simplified Loss Training:  61%|██████▏   | 184/300 [01:09<00:29,  3.87it/s]Simplified Loss Training:  62%|██████▏   | 185/300 [01:09<00:29,  3.88it/s]Simplified Loss Training:  62%|██████▏   | 186/300 [01:09<00:29,  3.88it/s]Simplified Loss Training:  62%|██████▏   | 187/300 [01:10<00:29,  3.88it/s]Simplified Loss Training:  63%|██████▎   | 188/300 [01:10<00:28,  3.88it/s]Simplified Loss Training:  63%|██████▎   | 189/300 [01:10<00:28,  3.88it/s]Simplified Loss Training:  63%|██████▎   | 190/300 [01:10<00:28,  3.88it/s]Simplified Loss Training:  64%|██████▎   | 191/300 [01:11<00:28,  3.89it/s]Simplified Loss Training:  64%|██████▍   | 192/300 [01:11<00:27,  3.88it/s]Simplified Loss Training:  64%|██████▍   | 193/300 [01:11<00:27,  3.87it/s]Simplified Loss Training:  65%|██████▍   | 194/300 [01:11<00:27,  3.87it/s]Simplified Loss Training:  65%|██████▌   | 195/300 [01:12<00:27,  3.87it/s]Simplified Loss Training:  65%|██████▌   | 196/300 [01:12<00:26,  3.88it/s]Simplified Loss Training:  66%|██████▌   | 197/300 [01:12<00:26,  3.88it/s]Simplified Loss Training:  66%|██████▌   | 198/300 [01:13<00:26,  3.88it/s]Simplified Loss Training:  66%|██████▋   | 199/300 [01:13<00:26,  3.88it/s]Simplified Loss Training:  67%|██████▋   | 200/300 [01:13<00:25,  3.88it/s]Simplified Loss Training:  67%|██████▋   | 201/300 [01:13<00:25,  3.86it/s]Simplified Loss Training:  67%|██████▋   | 202/300 [01:14<00:25,  3.88it/s]Simplified Loss Training:  68%|██████▊   | 203/300 [01:14<00:25,  3.87it/s]Simplified Loss Training:  68%|██████▊   | 204/300 [01:14<00:24,  3.88it/s]Simplified Loss Training:  68%|██████▊   | 205/300 [01:14<00:24,  3.89it/s]Simplified Loss Training:  69%|██████▊   | 206/300 [01:15<00:24,  3.89it/s]Simplified Loss Training:  69%|██████▉   | 207/300 [01:15<00:24,  3.87it/s]Simplified Loss Training:  69%|██████▉   | 208/300 [01:15<00:23,  3.87it/s]Simplified Loss Training:  70%|██████▉   | 209/300 [01:15<00:23,  3.87it/s]Simplified Loss Training:  70%|███████   | 210/300 [01:16<00:23,  3.87it/s]Simplified Loss Training:  70%|███████   | 211/300 [01:16<00:23,  3.86it/s]Simplified Loss Training:  71%|███████   | 212/300 [01:16<00:22,  3.85it/s]Simplified Loss Training:  71%|███████   | 213/300 [01:16<00:22,  3.85it/s]Simplified Loss Training:  71%|███████▏  | 214/300 [01:17<00:22,  3.86it/s]Simplified Loss Training:  72%|███████▏  | 215/300 [01:17<00:22,  3.85it/s]Simplified Loss Training:  72%|███████▏  | 216/300 [01:17<00:21,  3.85it/s]Simplified Loss Training:  72%|███████▏  | 217/300 [01:17<00:21,  3.85it/s]Simplified Loss Training:  73%|███████▎  | 218/300 [01:18<00:21,  3.83it/s]Simplified Loss Training:  73%|███████▎  | 219/300 [01:18<00:21,  3.81it/s]Simplified Loss Training:  73%|███████▎  | 220/300 [01:18<00:21,  3.78it/s]Simplified Loss Training:  74%|███████▎  | 221/300 [01:18<00:20,  3.79it/s]Simplified Loss Training:  74%|███████▍  | 222/300 [01:19<00:20,  3.81it/s]Simplified Loss Training:  74%|███████▍  | 223/300 [01:19<00:20,  3.83it/s]Simplified Loss Training:  75%|███████▍  | 224/300 [01:19<00:19,  3.85it/s]Simplified Loss Training:  75%|███████▌  | 225/300 [01:20<00:19,  3.86it/s]Simplified Loss Training:  75%|███████▌  | 226/300 [01:20<00:19,  3.88it/s]Simplified Loss Training:  76%|███████▌  | 227/300 [01:20<00:18,  3.88it/s]Simplified Loss Training:  76%|███████▌  | 228/300 [01:20<00:18,  3.88it/s]Simplified Loss Training:  76%|███████▋  | 229/300 [01:21<00:18,  3.87it/s]Simplified Loss Training:  77%|███████▋  | 230/300 [01:21<00:18,  3.86it/s]Simplified Loss Training:  77%|███████▋  | 231/300 [01:21<00:17,  3.85it/s]Simplified Loss Training:  77%|███████▋  | 232/300 [01:21<00:17,  3.86it/s]Simplified Loss Training:  78%|███████▊  | 233/300 [01:22<00:17,  3.87it/s]Simplified Loss Training:  78%|███████▊  | 234/300 [01:22<00:17,  3.86it/s]Simplified Loss Training:  78%|███████▊  | 235/300 [01:22<00:16,  3.86it/s]Simplified Loss Training:  79%|███████▊  | 236/300 [01:22<00:16,  3.85it/s]Simplified Loss Training:  79%|███████▉  | 237/300 [01:23<00:16,  3.84it/s]Simplified Loss Training:  79%|███████▉  | 238/300 [01:23<00:16,  3.84it/s]Simplified Loss Training:  80%|███████▉  | 239/300 [01:23<00:15,  3.84it/s]Simplified Loss Training:  80%|████████  | 240/300 [01:23<00:15,  3.84it/s]Simplified Loss Training:  80%|████████  | 241/300 [01:24<00:15,  3.82it/s]Simplified Loss Training:  81%|████████  | 242/300 [01:24<00:15,  3.83it/s]Simplified Loss Training:  81%|████████  | 243/300 [01:24<00:14,  3.83it/s]Simplified Loss Training:  81%|████████▏ | 244/300 [01:24<00:14,  3.84it/s]Simplified Loss Training:  82%|████████▏ | 245/300 [01:25<00:14,  3.85it/s]Simplified Loss Training:  82%|████████▏ | 246/300 [01:25<00:14,  3.85it/s]Simplified Loss Training:  82%|████████▏ | 247/300 [01:25<00:13,  3.84it/s]Simplified Loss Training:  83%|████████▎ | 248/300 [01:25<00:13,  3.86it/s]Simplified Loss Training:  83%|████████▎ | 249/300 [01:26<00:13,  3.85it/s]Simplified Loss Training:  83%|████████▎ | 250/300 [01:26<00:12,  3.85it/s]Simplified Loss Training:  84%|████████▎ | 251/300 [01:26<00:12,  3.85it/s]Simplified Loss Training:  84%|████████▍ | 252/300 [01:27<00:12,  3.85it/s]Simplified Loss Training:  84%|████████▍ | 253/300 [01:27<00:12,  3.85it/s]Simplified Loss Training:  85%|████████▍ | 254/300 [01:27<00:12,  3.82it/s]Simplified Loss Training:  85%|████████▌ | 255/300 [01:27<00:11,  3.80it/s]Simplified Loss Training:  85%|████████▌ | 256/300 [01:28<00:11,  3.82it/s]Simplified Loss Training:  86%|████████▌ | 257/300 [01:28<00:11,  3.82it/s]Simplified Loss Training:  86%|████████▌ | 258/300 [01:28<00:10,  3.82it/s]Simplified Loss Training:  86%|████████▋ | 259/300 [01:28<00:10,  3.80it/s]Simplified Loss Training:  87%|████████▋ | 260/300 [01:29<00:10,  3.79it/s]Simplified Loss Training:  87%|████████▋ | 261/300 [01:29<00:10,  3.75it/s]Simplified Loss Training:  87%|████████▋ | 262/300 [01:29<00:10,  3.75it/s]Simplified Loss Training:  88%|████████▊ | 263/300 [01:29<00:09,  3.76it/s]Simplified Loss Training:  88%|████████▊ | 264/300 [01:30<00:09,  3.75it/s]Simplified Loss Training:  88%|████████▊ | 265/300 [01:30<00:09,  3.74it/s]Simplified Loss Training:  89%|████████▊ | 266/300 [01:30<00:09,  3.73it/s]Simplified Loss Training:  89%|████████▉ | 267/300 [01:31<00:08,  3.78it/s]Simplified Loss Training:  89%|████████▉ | 268/300 [01:31<00:08,  3.78it/s]Simplified Loss Training:  90%|████████▉ | 269/300 [01:31<00:08,  3.79it/s]Simplified Loss Training:  90%|█████████ | 270/300 [01:31<00:07,  3.83it/s]Simplified Loss Training:  90%|█████████ | 271/300 [01:32<00:07,  3.85it/s]Simplified Loss Training:  91%|█████████ | 272/300 [01:32<00:07,  3.84it/s]Simplified Loss Training:  91%|█████████ | 273/300 [01:32<00:07,  3.81it/s]Simplified Loss Training:  91%|█████████▏| 274/300 [01:32<00:06,  3.82it/s]Simplified Loss Training:  92%|█████████▏| 275/300 [01:33<00:06,  3.85it/s]Simplified Loss Training:  92%|█████████▏| 276/300 [01:33<00:06,  3.86it/s]Simplified Loss Training:  92%|█████████▏| 277/300 [01:33<00:05,  3.86it/s]Simplified Loss Training:  93%|█████████▎| 278/300 [01:33<00:05,  3.88it/s]Simplified Loss Training:  93%|█████████▎| 279/300 [01:34<00:05,  3.88it/s]Simplified Loss Training:  93%|█████████▎| 280/300 [01:34<00:05,  3.88it/s]Simplified Loss Training:  94%|█████████▎| 281/300 [01:34<00:04,  3.87it/s]Simplified Loss Training:  94%|█████████▍| 282/300 [01:34<00:04,  3.88it/s]Simplified Loss Training:  94%|█████████▍| 283/300 [01:35<00:04,  3.88it/s]Simplified Loss Training:  95%|█████████▍| 284/300 [01:35<00:04,  3.88it/s]Simplified Loss Training:  95%|█████████▌| 285/300 [01:35<00:03,  3.89it/s]Simplified Loss Training:  95%|█████████▌| 286/300 [01:35<00:03,  3.89it/s]Simplified Loss Training:  96%|█████████▌| 287/300 [01:36<00:03,  3.89it/s]Simplified Loss Training:  96%|█████████▌| 288/300 [01:36<00:03,  3.89it/s]Simplified Loss Training:  96%|█████████▋| 289/300 [01:36<00:02,  3.89it/s]Simplified Loss Training:  97%|█████████▋| 290/300 [01:36<00:02,  3.89it/s]Simplified Loss Training:  97%|█████████▋| 291/300 [01:37<00:02,  3.88it/s]Simplified Loss Training:  97%|█████████▋| 292/300 [01:37<00:02,  3.88it/s]Simplified Loss Training:  98%|█████████▊| 293/300 [01:37<00:01,  3.89it/s]Simplified Loss Training:  98%|█████████▊| 294/300 [01:37<00:01,  3.89it/s]Simplified Loss Training:  98%|█████████▊| 295/300 [01:38<00:01,  3.90it/s]Simplified Loss Training:  99%|█████████▊| 296/300 [01:38<00:01,  3.90it/s]Simplified Loss Training:  99%|█████████▉| 297/300 [01:38<00:00,  3.90it/s]Simplified Loss Training:  99%|█████████▉| 298/300 [01:39<00:00,  3.90it/s]Simplified Loss Training: 100%|█████████▉| 299/300 [01:39<00:00,  3.90it/s]Simplified Loss Training: 100%|██████████| 300/300 [01:39<00:00,  3.88it/s]Simplified Loss Training: 100%|██████████| 300/300 [01:39<00:00,  3.01it/s]
+DEBUG: thetas_sampled.shape = (1, 32, 2)
+DEBUG: log_p_posterior.shape = (1, 32)
+DEBUG: prior_logp.shape = (1, 32)
+DEBUG: x_sim_samples.shape = (1, 32, 32, 6)
+  Epoch 0: Covariance matrix =
+    [[ 2.36191567e-03  1.43309264e-03  4.05667577e-04 -5.90296233e-05
+   7.68737169e-04 -9.30925742e-04]
+ [ 1.43309264e-03  3.23188976e-03  1.77580480e-03  3.23422412e-05
+  -1.00373024e-03 -1.65102689e-03]
+ [ 4.05667577e-04  1.77580480e-03  3.42215880e-03 -8.01802881e-04
+   7.66903509e-04 -1.41290938e-03]
+ [-5.90296233e-05  3.23422412e-05 -8.01802881e-04  2.66082338e-03
+  -1.44391547e-03  1.11271735e-04]
+ [ 7.68737169e-04 -1.00373024e-03  7.66903509e-04 -1.44391547e-03
+   4.87867039e-03 -1.37697388e-03]
+ [-9.30925742e-04 -1.65102689e-03 -1.41290938e-03  1.11271735e-04
+  -1.37697388e-03  4.19612505e-03]]
+  Epoch 0: Loss = 276810727054879752192.000000
+Simplified Loss Epoch 0 (joint), Train Loss: 276810727054879752192.000000, Val Loss: 97387029223554777088.000000
+  Epoch 20: Covariance matrix =
+    [[ 0.00370041 -0.00099737  0.00170679 -0.00573493 -0.00311687  0.00627121]
+ [-0.00099737  0.00363978  0.00027819  0.00738419  0.00402326 -0.01164916]
+ [ 0.00170679  0.00027819  0.00467033  0.00212241  0.003956   -0.00658066]
+ [-0.00573493  0.00738419  0.00212241  0.02601746  0.0208667  -0.03990435]
+ [-0.00311687  0.00402326  0.003956    0.0208667   0.02509542 -0.04374761]
+ [ 0.00627121 -0.01164916 -0.00658066 -0.03990435 -0.04374761  0.09586221]]
+  Epoch 20: Loss = 111.983138
+Simplified Loss Epoch 20 (joint), Train Loss: 111.983138, Val Loss: 133.494870
+  Epoch 40: Covariance matrix =
+    [[ 0.00598354 -0.0031909   0.00271523 -0.01022458 -0.00611555  0.01351019]
+ [-0.0031909   0.00662514 -0.00431378  0.01602107  0.00988495 -0.02137158]
+ [ 0.00271523 -0.00431378  0.00817935  0.00068068 -0.00311664  0.0003392 ]
+ [-0.01022458  0.01602107  0.00068068  0.07035212  0.04518804 -0.09297274]
+ [-0.00611555  0.00988495 -0.00311664  0.04518804  0.05378538 -0.08375316]
+ [ 0.01351019 -0.02137158  0.0003392  -0.09297274 -0.08375316  0.21224392]]
+  Epoch 40: Loss = 88.391354
+Simplified Loss Epoch 40 (joint), Train Loss: 88.391354, Val Loss: 94.763444
+  Epoch 60: Covariance matrix =
+    [[ 0.00768488 -0.00762782 -0.00143182 -0.01049533 -0.00909506  0.01910896]
+ [-0.00762782  0.01289554 -0.00433523  0.02392012  0.01535456 -0.03694437]
+ [-0.00143182 -0.00433523  0.01327994  0.00125672  0.00111732 -0.00428169]
+ [-0.01049533  0.02392012  0.00125672  0.08266069  0.05943208 -0.12362308]
+ [-0.00909506  0.01535456  0.00111732  0.05943208  0.08874685 -0.12374534]
+ [ 0.01910896 -0.03694437 -0.00428169 -0.12362308 -0.12374534  0.31700567]]
+  Epoch 60: Loss = 70.051322
+Simplified Loss Epoch 60 (joint), Train Loss: 70.051322, Val Loss: 53.646658
+  Epoch 80: Covariance matrix =
+    [[ 0.00745782 -0.01580304 -0.00486697 -0.00656776 -0.00884057  0.02082392]
+ [-0.01580304  0.03989522  0.0054701   0.02766118  0.02609536 -0.06433783]
+ [-0.00486697  0.0054701   0.01448967  0.01324487  0.00520492 -0.02023623]
+ [-0.00656776  0.02766118  0.01324487  0.0908119   0.05620246 -0.12852768]
+ [-0.00884057  0.02609536  0.00520492  0.05620246  0.09043737 -0.12822416]
+ [ 0.02082392 -0.06433783 -0.02023623 -0.12852768 -0.12822416  0.34945347]]
+  Epoch 80: Loss = 86.781498
+Simplified Loss Epoch 80 (joint), Train Loss: 86.781498, Val Loss: 89.655010
+  Epoch 100: Covariance matrix =
+    [[ 0.00876922 -0.01475734 -0.00197745 -0.01047553 -0.01058353  0.02832045]
+ [-0.01475734  0.03166004 -0.00725385  0.03739109  0.02577282 -0.07101077]
+ [-0.00197745 -0.00725385  0.02618526 -0.00081494 -0.00284581 -0.00641285]
+ [-0.01047553  0.03739109 -0.00081494  0.15931471  0.08748183 -0.22323408]
+ [-0.01058353  0.02577282 -0.00284581  0.08748183  0.15009158 -0.19410311]
+ [ 0.02832045 -0.07101077 -0.00641285 -0.22323408 -0.19410311  0.59289342]]
+  Epoch 100: Loss = 44.251288
+Simplified Loss Epoch 100 (joint), Train Loss: 44.251288, Val Loss: 38.136019
+  Epoch 120: Covariance matrix =
+    [[ 0.01026923 -0.01835007 -0.00222413 -0.01204927 -0.01046844  0.03205341]
+ [-0.01835007  0.04056186 -0.00704532  0.04202983  0.02745686 -0.08531957]
+ [-0.00222413 -0.00704532  0.02691945  0.00652572 -0.00158981 -0.00898818]
+ [-0.01204927  0.04202983  0.00652572  0.17948034  0.098847   -0.2559413 ]
+ [-0.01046844  0.02745686 -0.00158981  0.098847    0.18165913 -0.22453727]
+ [ 0.03205341 -0.08531957 -0.00898818 -0.2559413  -0.22453727  0.70981132]]
+  Epoch 120: Loss = 81.737101
+Simplified Loss Epoch 120 (joint), Train Loss: 81.737101, Val Loss: 91.993047
+  Epoch 140: Covariance matrix =
+    [[ 0.01045738 -0.02455004 -0.00769095 -0.01228168 -0.01364169  0.03552322]
+ [-0.02455004  0.06653031  0.0031019   0.05370024  0.04210498 -0.11794641]
+ [-0.00769095  0.0031019   0.04453412  0.01069243  0.00574973 -0.02502994]
+ [-0.01228168  0.05370024  0.01069243  0.23872944  0.13549826 -0.34941461]
+ [-0.01364169  0.04210498  0.00574973  0.13549826  0.24195204 -0.33820984]
+ [ 0.03552322 -0.11794641 -0.02502994 -0.34941461 -0.33820984  1.01187592]]
+  Epoch 140: Loss = 34.476318
+Simplified Loss Epoch 140 (joint), Train Loss: 34.476318, Val Loss: 20.734735
+  Epoch 160: Covariance matrix =
+    [[ 0.01090425 -0.03377211 -0.01058202 -0.01342729 -0.0138103   0.03884816]
+ [-0.03377211  0.11550136  0.01277911  0.07356838  0.05174743 -0.16332457]
+ [-0.01058202  0.01277911  0.06561485  0.01391904  0.01510208 -0.02965789]
+ [-0.01342729  0.07356838  0.01391904  0.33818361  0.17060304 -0.45465321]
+ [-0.0138103   0.05174743  0.01510208  0.17060304  0.28748017 -0.41848073]
+ [ 0.03884816 -0.16332457 -0.02965789 -0.45465321 -0.41848073  1.27072714]]
+  Epoch 160: Loss = 32.748556
+Simplified Loss Epoch 160 (joint), Train Loss: 32.748556, Val Loss: 39.543392
+  Epoch 180: Covariance matrix =
+    [[ 0.01216687 -0.03537517 -0.01268682 -0.02048755 -0.02368433  0.0511184 ]
+ [-0.03537517  0.11458862  0.00871361  0.10125555  0.08654823 -0.1997204 ]
+ [-0.01268682  0.00871361  0.10502593  0.00765686  0.01052402 -0.03843005]
+ [-0.02048755  0.10125555  0.00765686  0.5650117   0.33521735 -0.76835349]
+ [-0.02368433  0.08654823  0.01052402  0.33521735  0.59451301 -0.78957064]
+ [ 0.0511184  -0.1997204  -0.03843005 -0.76835349 -0.78957064  2.00285607]]
+  Epoch 180: Loss = 10.855753
+Simplified Loss Epoch 180 (joint), Train Loss: 10.855753, Val Loss: 11.704046
+  Epoch 200: Covariance matrix =
+    [[ 0.01377155 -0.03609368 -0.00792639 -0.03410513 -0.03333301  0.06049146]
+ [-0.03609368  0.1061017  -0.01914105  0.14900531  0.10611618 -0.21760223]
+ [-0.00792639 -0.01914105  0.17201716 -0.07975143 -0.00562085  0.04424172]
+ [-0.03410513  0.14900531 -0.07975143  0.90783842  0.51512942 -1.09371836]
+ [-0.03333301  0.10611618 -0.00562085  0.51512942  0.817312   -1.03993301]
+ [ 0.06049146 -0.21760223  0.04424172 -1.09371836 -1.03993301  2.46393343]]
+  Epoch 200: Loss = 9.076548
+Simplified Loss Epoch 200 (joint), Train Loss: 9.076548, Val Loss: 7.673335
+  Epoch 220: Covariance matrix =
+    [[ 0.01474851 -0.03862481 -0.00570171 -0.04201275 -0.03526229  0.07829929]
+ [-0.03862481  0.11326654 -0.03143632  0.17854373  0.1121285  -0.27381085]
+ [-0.00570171 -0.03143632  0.21220253 -0.12030529 -0.01776074  0.07574723]
+ [-0.04201275  0.17854373 -0.12030529  1.18001846  0.61491532 -1.49361305]
+ [-0.03526229  0.1121285  -0.01776074  0.61491532  0.89032003 -1.26119873]
+ [ 0.07829929 -0.27381085  0.07574723 -1.49361305 -1.26119873  3.2833504 ]]
+  Epoch 220: Loss = 11.609419
+Simplified Loss Epoch 220 (joint), Train Loss: 11.609419, Val Loss: 12.724388
+  Epoch 240: Covariance matrix =
+    [[ 1.66311249e-02 -3.99107397e-02 -2.92693436e-03 -5.68535516e-02
+  -4.94660151e-02  9.27811722e-02]
+ [-3.99107397e-02  1.09280785e-01 -4.25665054e-02  2.10935841e-01
+   1.45421429e-01 -3.05175425e-01]
+ [-2.92693436e-03 -4.25665054e-02  2.23318682e-01 -1.10751637e-01
+  -2.39262588e-02  9.65018042e-02]
+ [-5.68535516e-02  2.10935841e-01 -1.10751637e-01  1.45294016e+00
+   8.37671185e-01 -1.87332278e+00]
+ [-4.94660151e-02  1.45421429e-01 -2.39262588e-02  8.37671185e-01
+   1.06941754e+00 -1.60672999e+00]
+ [ 9.27811722e-02 -3.05175425e-01  9.65018042e-02 -1.87332278e+00
+  -1.60672999e+00  3.91326683e+00]]
+  Epoch 240: Loss = 8.058336
+Simplified Loss Epoch 240 (joint), Train Loss: 8.058336, Val Loss: 8.013750
+  Epoch 260: Covariance matrix =
+    [[ 1.83435809e-02 -4.34251046e-02  3.36309711e-04 -6.97299214e-02
+  -5.79218661e-02  1.08748314e-01]
+ [-4.34251046e-02  1.18653815e-01 -5.55215999e-02  2.50526963e-01
+   1.68309860e-01 -3.51827769e-01]
+ [ 3.36309711e-04 -5.55215999e-02  2.43963391e-01 -1.14925362e-01
+  -1.77273888e-02  8.93228715e-02]
+ [-6.97299214e-02  2.50526963e-01 -1.14925362e-01  1.70888374e+00
+   1.00142894e+00 -2.23753290e+00]
+ [-5.79218661e-02  1.68309860e-01 -1.77273888e-02  1.00142894e+00
+   1.20834404e+00 -1.87630652e+00]
+ [ 1.08748314e-01 -3.51827769e-01  8.93228715e-02 -2.23753290e+00
+  -1.87630652e+00  4.45539560e+00]]
+  Epoch 260: Loss = 7.437056
+Simplified Loss Epoch 260 (joint), Train Loss: 7.437056, Val Loss: 6.490531
+  Epoch 280: Covariance matrix =
+    [[ 1.96957404e-02 -4.91165838e-02  4.36101315e-03 -8.98422487e-02
+  -6.64857866e-02  1.21639837e-01]
+ [-4.91165838e-02  1.40406999e-01 -7.17139839e-02  3.24686392e-01
+   1.98546424e-01 -4.13732282e-01]
+ [ 4.36101315e-03 -7.17139839e-02  2.72678503e-01 -1.48212853e-01
+  -7.55915698e-03  1.26633145e-01]
+ [-8.98422487e-02  3.24686392e-01 -1.48212853e-01  2.18918871e+00
+   1.21834753e+00 -2.74447572e+00]
+ [-6.64857866e-02  1.98546424e-01 -7.55915698e-03  1.21834753e+00
+   1.25748828e+00 -2.11723811e+00]
+ [ 1.21639837e-01 -4.13732282e-01  1.26633145e-01 -2.74447572e+00
+  -2.11723811e+00  5.00319532e+00]]
+  Epoch 280: Loss = 3375459328507208192.000000
+Simplified Loss Epoch 280 (joint), Train Loss: 3375459328507208192.000000, Val Loss: 8.839411
+Stage 6: Final posterior tuning with fixed correction model...
+Training final_posterior using SimplifiedPosteriorLoss (final posterior tuning)...
+Created 1 observed data batches of size ~250
+Simplified Loss Training: 0it [00:00, ?it/s]Simplified Loss Training: 0it [00:00, ?it/s]
+Final posterior tuning completed with fixed correction model
+
+🔍 === CORRECTION MODEL DIAGNOSTICS: Final Posterior Tuning - final_posterior ===
+📊 Diagonal Variances: [0.01821999 0.11841543 0.24126796 1.70068854 1.1826902  4.45641707]
+📊 Covariance Matrix Shape: (6, 6)
+📊 Covariance Determinant: 0.000003
+📊 Off-diagonal Elements (max abs): 2.234537
+🔍 === END DIAGNOSTICS: Final Posterior Tuning - final_posterior ===
+
+4-stage training system completed.

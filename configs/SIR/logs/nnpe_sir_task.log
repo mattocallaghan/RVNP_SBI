@@ -1,0 +1,29 @@
+2025-08-21 06:42:39.725766: E external/local_xla/xla/stream_executor/cuda/cuda_fft.cc:467] Unable to register cuFFT factory: Attempting to register factory for plugin cuFFT when one has already been registered
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+E0000 00:00:1755758559.747058   10091 cuda_dnn.cc:8579] Unable to register cuDNN factory: Attempting to register factory for plugin cuDNN when one has already been registered
+E0000 00:00:1755758559.753593   10091 cuda_blas.cc:1407] Unable to register cuBLAS factory: Attempting to register factory for plugin cuBLAS when one has already been registered
+W0000 00:00:1755758559.769532   10091 computation_placer.cc:177] computation placer already registered. Please check linkage and avoid linking the same target more than once.
+W0000 00:00:1755758559.769640   10091 computation_placer.cc:177] computation placer already registered. Please check linkage and avoid linking the same target more than once.
+W0000 00:00:1755758559.769685   10091 computation_placer.cc:177] computation placer already registered. Please check linkage and avoid linking the same target more than once.
+W0000 00:00:1755758559.769727   10091 computation_placer.cc:177] computation placer already registered. Please check linkage and avoid linking the same target more than once.
+INFO:2025-08-21 06:42:44,369:jax._src.xla_bridge:925: Unable to initialize backend 'rocm': module 'jaxlib.xla_extension' has no attribute 'GpuAllocatorConfig'
+I0821 06:42:44.369009 132420209386112 xla_bridge.py:925] Unable to initialize backend 'rocm': module 'jaxlib.xla_extension' has no attribute 'GpuAllocatorConfig'
+INFO:2025-08-21 06:42:44,370:jax._src.xla_bridge:925: Unable to initialize backend 'tpu': INTERNAL: Failed to open libtpu.so: libtpu.so: cannot open shared object file: No such file or directory
+I0821 06:42:44.370404 132420209386112 xla_bridge.py:925] Unable to initialize backend 'tpu': INTERNAL: Failed to open libtpu.so: libtpu.so: cannot open shared object file: No such file or directory
+Traceback (most recent call last):
+  File "/content/drive/Othercomputers/My MacBook Air/NLPE_SBI/main_train_eval.py", line 45, in <module>
+    app.run(main)
+  File "/usr/local/lib/python3.12/dist-packages/absl/app.py", line 308, in run
+    _run_main(main, args)
+  File "/usr/local/lib/python3.12/dist-packages/absl/app.py", line 254, in _run_main
+    sys.exit(main(argv))
+             ^^^^^^^^^^
+  File "/content/drive/Othercomputers/My MacBook Air/NLPE_SBI/main_train_eval.py", line 29, in main
+    run_lib.train_flow(FLAGS.config)
+  File "/content/drive/Othercomputers/My MacBook Air/NLPE_SBI/run_lib.py", line 20, in train_flow
+    flow_class = normalizing_flow.get_flow(config.model.name)(config,rng)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/content/drive/Othercomputers/My MacBook Air/NLPE_SBI/normalizing_flow.py", line 108, in get_flow
+    return _FLOWS[name]
+           ~~~~~~^^^^^^
+KeyError: 'noisy_neural_posterior'
