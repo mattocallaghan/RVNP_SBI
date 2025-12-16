@@ -23,7 +23,7 @@ def get_config():
     config.training.batch_size = 2**10
     config.training.final_epochs=500  # Epochs for stage 5 (main training)
     config.training.final_posterior_epochs=0  # Epochs for stage 6 (final posterior tuning)
-    config.model.train_simulator=False       # Stage 2: Train simulator flow p(x_sim|θ)    
+    config.model.train_simulator=True       # Stage 2: Train simulator flow p(x_sim|θ) - CHANGED TO TRUE FOR FROM-SCRATCH TRAINING    
     
 
     return config

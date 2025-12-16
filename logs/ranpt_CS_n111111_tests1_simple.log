@@ -1,0 +1,23 @@
+2025-12-12 16:36:58 [INFO] ================================================================================
+2025-12-12 16:36:58 [INFO] RVNP Training Pipeline
+2025-12-12 16:36:58 [INFO] ================================================================================
+2025-12-12 16:36:58 [INFO] Model: ranpt
+2025-12-12 16:36:58 [INFO] Dataset: CS
+2025-12-12 16:36:58 [INFO] Num simulations: 111111
+2025-12-12 16:36:58 [INFO] Num tests: 1
+2025-12-12 16:36:58 [INFO] Correction type: simple
+2025-12-12 16:36:58 [INFO] ================================================================================
+2025-12-12 16:36:59 [INFO] Experiment strategy: 50 experiments × 1 points = 50 total points
+2025-12-12 16:37:00 [INFO] Loading shared training data completed in 0.88s
+2025-12-12 16:37:00 [INFO] Loaded training data: 97 train batches, 10 eval batches
+2025-12-12 16:37:02 [INFO] Loading inference data completed in 2.02s
+2025-12-12 16:37:02 [INFO] Loaded inference data: 50 total points for 50 experiments
+2025-12-12 16:37:02 [INFO] 
+2025-12-12 16:37:02 [INFO] Starting experiment training...
+2025-12-12 16:37:02 [INFO] 
+2025-12-12 16:37:02 [INFO] --------------------------------------------------------------------------------
+2025-12-12 16:37:02 [INFO] EXPERIMENT 1/50
+2025-12-12 16:37:02 [INFO] --------------------------------------------------------------------------------
+2025-12-12 16:37:02 [INFO] Training experiment 1/50 using points 0 to 0
+2025-12-12 16:37:05 [INFO] Experiment 1 - Flow initialization completed in 3.10s
+2025-12-12 16:37:05 [INFO] Experiment 1 - Training completed in 0.44s

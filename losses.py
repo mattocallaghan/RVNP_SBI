@@ -1,24 +1,26 @@
+"""Loss functions for RVNP training."""
 
-import equinox as eqx
+import jax
 import jax.numpy as jnp
 import jax.random as jr
-import jax
-import paramax
 from jax import vmap
 from jax.lax import stop_gradient
+from jax.random import split
 from jax.scipy.special import logsumexp
 from jaxtyping import Array, ArrayLike, Float, PRNGKeyArray
-import jax
-import jax.numpy as jnp
-from jax.random import split
-from jax import vmap
-import equinox as eqx
-from flowjax.distributions import AbstractDistribution
 from functools import partial
-from jax.random import split
-import jax
+
+import equinox as eqx
+import paramax
 import optax
-from models.correction_model import CorrectionModel, SimpleCorrectionModel, DiagonalNeuralCorrectionModel, HybridCorrectionModel, FullNeuralCorrectionModel, MuHybridCorrectionModel, GlobalCorrectionModel
+from flowjax.distributions import AbstractDistribution
+
+from models.correction_model import (
+    CorrectionModel, SimpleCorrectionModel, DiagonalNeuralCorrectionModel,
+    HybridCorrectionModel, FullNeuralCorrectionModel, MuHybridCorrectionModel,
+    GlobalCorrectionModel
+)
+
 class MaximumLikelihoodLoss:
     """Loss for fitting a flow with maximum likelihood (negative log likelihood).
 
@@ -191,10 +193,11 @@ class SimplifiedPosteriorLoss:
         lambda_variational: float = 1.0,  # Weight for variational loss
         K_obs_samples: int = 32,
         lambda_entropy: float = 0.00,
-        use_variational: bool = True,  
+        use_variational: bool = True,
         lambda_consistency: float = 0.0,
         lambda_shrinkage: float = 0.00,  # Shrinkage prior toward delta function
-        simulator_samples_per_theta: int = 32,  # Number of samples per theta when using simulator sampling
+        simulator_samples_per_theta: int = 32,  # Number of theta samples from posterior per observation
+        n_sim_samples_per_theta: int = 32,  # Number of x_sim samples per theta in KL divergence
         use_posterior_theta_sampling: bool = True,  # True=sample theta from posterior, False=use fixed training theta
         lambda_kl: float = 1.0,  # Weight for KL term
         use_posterior_term: bool = True,  # True=include posterior NLL term, False=skip it
@@ -217,7 +220,8 @@ class SimplifiedPosteriorLoss:
         self.K_obs_samples = K_obs_samples
         self.lambda_entropy = lambda_entropy
         self.use_variational = use_variational  # Controls variational learning vs uniform MLE
-        self.simulator_samples_per_theta = simulator_samples_per_theta  # Number of samples per theta
+        self.simulator_samples_per_theta = simulator_samples_per_theta  # Number of theta samples from posterior
+        self.n_sim_samples_per_theta = n_sim_samples_per_theta  # Number of x_sim samples per theta
         self.use_posterior_theta_sampling = use_posterior_theta_sampling  # Controls theta sampling source
         self.lambda_consistency = lambda_consistency
         self.lambda_shrinkage = lambda_shrinkage  # Shrinkage prior toward delta function
@@ -671,30 +675,27 @@ class SimplifiedPosteriorLoss:
 
         # Shape: (n_obs, samples_per_theta, theta_dim)
         thetas_sampled,log_p_posterior = jax.vmap(sample_thetas_for_single_obs)(x_obs_real, keys_theta)
-        print(f"DEBUG: thetas_sampled.shape = {thetas_sampled.shape}")
-        print(f"DEBUG: log_p_posterior.shape = {log_p_posterior.shape}")
         theta_for_sampling = thetas_sampled[:,:,:]
 
         # Clip theta values to training bounds if enabled
         #theta_for_sampling = self._clip_theta(theta_for_sampling)
 
         prior_logp=jax.vmap(jax.vmap(prior_log))(theta_for_sampling)
-        print(f"DEBUG: prior_logp.shape = {prior_logp.shape}")
         # Generate keys for simulator sampling: (n_obs, samples_per_theta)
         n_obs_total, samples_per_theta = theta_for_sampling.shape[0], theta_for_sampling.shape[1]
         
         key_sample, key = jax.random.split(key)
         keys_sim_flat = jax.random.split(key_sample, n_obs_total * samples_per_theta)
         keys_sim = keys_sim_flat.reshape(n_obs_total, samples_per_theta)
-        
-        n_samples=32
+
+        # Use configurable n_sim_samples_per_theta instead of hardcoded value
+        n_samples = self.n_sim_samples_per_theta
         def sample_from_simulator_single(theta_single, key_single):
             # Sample like theta sampling: key, shape, condition
             return simulator_flow.sample(key_single, (n_samples,), condition=theta_single)
         
         # Sample for all theta using nested vmap: (n_obs, samples_per_theta, n_samples, x_dim)
         x_sim_samples = vmap(vmap(sample_from_simulator_single))(theta_for_sampling, keys_sim)
-        print(f"DEBUG: x_sim_samples.shape = {x_sim_samples.shape}")
         n_obs, K_samples = thetas_sampled.shape[0], thetas_sampled.shape[1]
     
 

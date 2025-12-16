@@ -1,0 +1,44 @@
+2025-12-12 16:40:38 [INFO] ================================================================================
+2025-12-12 16:40:38 [INFO] RVNP Training Pipeline
+2025-12-12 16:40:38 [INFO] ================================================================================
+2025-12-12 16:40:38 [INFO] Model: nlpe_rqs_posterior
+2025-12-12 16:40:38 [INFO] Dataset: CS
+2025-12-12 16:40:38 [INFO] Num simulations: 111111
+2025-12-12 16:40:38 [INFO] Num tests: 100
+2025-12-12 16:40:38 [INFO] Correction type: simple
+2025-12-12 16:40:38 [INFO] ================================================================================
+2025-12-12 16:40:38 [INFO] Experiment strategy: 1 experiments × 100 points = 100 total points
+2025-12-12 16:40:39 [INFO] Loading shared training data completed in 0.73s
+2025-12-12 16:40:39 [INFO] Loaded training data: 97 train batches, 10 eval batches
+2025-12-12 16:40:41 [INFO] Loading inference data completed in 1.69s
+2025-12-12 16:40:41 [INFO] Loaded inference data: 100 total points for 1 experiments
+2025-12-12 16:40:41 [INFO] 
+2025-12-12 16:40:41 [INFO] Starting experiment training...
+2025-12-12 16:40:41 [INFO] 
+2025-12-12 16:40:41 [INFO] --------------------------------------------------------------------------------
+2025-12-12 16:40:41 [INFO] EXPERIMENT 1/1
+2025-12-12 16:40:41 [INFO] --------------------------------------------------------------------------------
+2025-12-12 16:40:41 [INFO] Training experiment 1/1 using points 0 to 99
+2025-12-12 16:40:46 [INFO] Experiment 1 - Flow initialization completed in 5.47s
+2025-12-12 16:41:39 [INFO] ================================================================================
+2025-12-12 16:41:39 [INFO] RVNP Training Pipeline
+2025-12-12 16:41:39 [INFO] ================================================================================
+2025-12-12 16:41:39 [INFO] Model: nlpe_rqs_posterior
+2025-12-12 16:41:39 [INFO] Dataset: CS
+2025-12-12 16:41:39 [INFO] Num simulations: 111111
+2025-12-12 16:41:39 [INFO] Num tests: 100
+2025-12-12 16:41:39 [INFO] Correction type: simple
+2025-12-12 16:41:39 [INFO] ================================================================================
+2025-12-12 16:41:39 [INFO] Experiment strategy: 1 experiments × 100 points = 100 total points
+2025-12-12 16:41:40 [INFO] Loading shared training data completed in 1.13s
+2025-12-12 16:41:40 [INFO] Loaded training data: 97 train batches, 10 eval batches
+2025-12-12 16:41:40 [INFO] Loading inference data completed in 0.00s
+2025-12-12 16:41:40 [INFO] Loaded inference data: 100 total points for 1 experiments
+2025-12-12 16:41:40 [INFO] 
+2025-12-12 16:41:40 [INFO] Starting experiment training...
+2025-12-12 16:41:40 [INFO] 
+2025-12-12 16:41:40 [INFO] --------------------------------------------------------------------------------
+2025-12-12 16:41:40 [INFO] EXPERIMENT 1/1
+2025-12-12 16:41:40 [INFO] --------------------------------------------------------------------------------
+2025-12-12 16:41:40 [INFO] Training experiment 1/1 using points 0 to 99
+2025-12-12 16:41:48 [INFO] Experiment 1 - Flow initialization completed in 8.34s

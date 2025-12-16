@@ -86,9 +86,9 @@ def get_config():
     config.training.logging_frequency=5
     #################################
 
-    # MAIN VARIATIONAL POSTERIOR CONFIGURATION 
+    # MAIN VARIATIONAL POSTERIOR CONFIGURATION
     config.model.lambda_variational=1.0  # variational loss weight
-    config.model.K_obs_samples=30  # Increased for better sampling diversity
+    config.model.K_obs_samples=10  # Reduced for faster training with small datasets
     config.model.lambda_entropy=0.0
      # Stronger shrinkage prior toward delta function (no misspecification)
     config.model.lambda_correlation=0.0  # L2 penalty on correlation logits to encourage diagonal covariance
@@ -137,11 +137,12 @@ def get_config():
     
     # === SIMULATOR SAMPLING FOR CORRECTION STAGE ===
     # During correction training, sample fresh data from the trained simulator instead of using fixed training data
-    # For each theta parameter, generate 25 fresh samples from simulator_flow.sample(theta) (reduced for speed)
+    # For each theta parameter, generate fresh samples from simulator_flow.sample(theta)
     # Use distance-dependent soft attention: w_ij = softmax(-||x_obs_j - x_sim_i||_2 / τ)
     # where τ = contrastive_temperature = 0.01 (sharp attention focusing on nearest samples)
     config.model.use_simulator_sampling=True        # Enable fresh simulator sampling during correction stages
-    config.model.simulator_samples_per_theta=32     # Sample 25 times per theta (reduced for speed while maintaining diversity)
+    config.model.simulator_samples_per_theta=10     # Reduced for faster training with small datasets
+    config.model.n_sim_samples_per_theta=10         # Number of x_sim samples per theta in KL divergence (controls inner loop)
     config.model.initial_correction_variance=-3
     config.model.lambda_consistency=0.0  # Updated posterior regularization
     config.model.lambda_consistency_final=0.0 # Increased consistency weight for final stage 6
