@@ -231,9 +231,9 @@ def get_config():
 | Method | Mean Correction | Covariance Correction | Variational | Use Case |
 |--------|----------------|----------------------|-------------|----------|
 | NPE | ❌ | ❌ | ❌ | Well-specified simulator |
-| NNPE | ❌ | ❌ | ✅ | Noisy observations |
-| RVNP-simple | ❌ | ✅ (Fixed Diagonal) | ✅ | Minimal misspecification |
-| RVNP-mu_hybrid | ✅ (Neural) | ✅ (Hybrid) | ✅ | Significant misspecification (PRIMARY) |
+| NNPE | ❌ | ✅ (Fixed Global Matrix) | HMC | Specific Misspecification |
+| RVNP-G | ❌ | ✅ (Global Matrix) | ✅ | Global misspecification |
+| RVNP | ✅ | ✅ (NN) | ✅ (NN) | Complex misspecification |
 
 ## Tasks and Simulators
 
