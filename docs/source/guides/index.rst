@@ -11,9 +11,6 @@ Advanced usage guides for RVNP-SBI.
 
 For quick start instructions, see :doc:`../getting_started`.
 
-For comprehensive project documentation, see the following files in the repository:
+For complete usage and configuration details, see the `README <https://github.com/USERNAME/RVNP_SBI/blob/main/README.md>`_.
 
-- ``CLAUDE.md`` - Complete project guide and reference
-- ``QUICKSTART.md`` - Quick start guide
-- ``EXPERIMENTS_README.md`` - Detailed experiment instructions
-- ``IMPLEMENTATION_PLAN.md`` - Implementation details
+For mathematical foundations, see :doc:`../theory`.

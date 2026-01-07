@@ -170,7 +170,7 @@ See ``CLAUDE.md`` for detailed configuration guide.
 Next Steps
 ----------
 
+- See :doc:`theory` for mathematical foundations
 - See :doc:`api/index` for API reference
 - See :doc:`guides/index` for advanced guides
-- Read ``EXPERIMENTS_README.md`` for experimental details
-- Read ``QUICKSTART.md`` for quick start guide
+- Read the `README <https://github.com/USERNAME/RVNP_SBI/blob/main/README.md>`_ for complete usage instructions

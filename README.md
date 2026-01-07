@@ -3,8 +3,11 @@
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![JAX](https://img.shields.io/badge/JAX-0.4+-orange.svg)](https://github.com/google/jax)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Docs](https://img.shields.io/badge/docs-in%20progress-yellow.svg)](docs/)
 
-This repository implements Robust Variational Neural Posterior estimation from the paper: "Robust amortised simulation-based inference under model misspecification using variational inference", O'Callaghan et al 2026
+This repository implements Robust Variational Neural Posterior estimation from the paper: "Robust variational neural posterior estimation for simulation-based inference", O'Callaghan et al 2025 (arXiv:2509.05724)
+
+> **Note**: API documentation website is currently being set up. See [docs/](docs/) for Sphinx source files.
 
 ## Algorithms Implemented
 

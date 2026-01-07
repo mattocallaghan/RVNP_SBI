@@ -108,4 +108,4 @@ Verify all configs exist::
 
     python verify_configs.py
 
-For more details, see ``EXPERIMENTS_README.md`` in the repository root.
+For complete experiment configuration details, see the `README <https://github.com/USERNAME/RVNP_SBI/blob/main/README.md>`_.

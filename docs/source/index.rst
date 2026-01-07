@@ -6,11 +6,11 @@ RVNP-SBI Documentation
 This documentation covers the RVNP-SBI codebase, implementing robust neural variational posterior estimation under model misspecification using variational inference.
 
 .. note::
-   This is the API reference documentation. For quick start guides and experiment instructions, see:
+   **Documentation Navigation**:
 
-   - `QUICKSTART.md <https://github.com/USERNAME/RVNP_SBI/blob/main/QUICKSTART.md>`_
-   - `CLAUDE.md <https://github.com/USERNAME/RVNP_SBI/blob/main/CLAUDE.md>`_
-   - `EXPERIMENTS_README.md <https://github.com/USERNAME/RVNP_SBI/blob/main/EXPERIMENTS_README.md>`_
+   - **Theory & Background**: See :doc:`theory` for mathematical foundations
+   - **Quick Start & Usage**: See the `README <https://github.com/USERNAME/RVNP_SBI/blob/main/README.md>`_
+   - **API Reference**: Browse the modules below for detailed class and function documentation
 
 Overview
 --------
@@ -29,6 +29,7 @@ The key innovation is the correction model that learns to adjust for model missp
    :caption: Contents:
 
    getting_started
+   theory
    api/index
    guides/index
 
@@ -50,13 +51,15 @@ Or run all main experiments::
 Citation
 --------
 
-If you use this code in your research, please cite::
+If you use this code in your research, please cite:
 
-    @article{ocallaghan2025robust,
-      title={Robust amortised simulation-based inference under model misspecification using variational inference},
-      author={O'Callaghan, M and others},
-      journal={ICML},
-      year={2026}
+.. code-block:: bibtex
+
+    @article{o2025robust,
+      title={Robust variational neural posterior estimation for simulation-based inference},
+      author={O'Callaghan, Matthew and Mandel, Kaisey S and Gilmore, Gerry},
+      journal={arXiv preprint arXiv:2509.05724},
+      year={2025}
     }
 
 Indices and tables
