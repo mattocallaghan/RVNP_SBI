@@ -249,7 +249,7 @@ class IntegratedPipeline:
 
         # Run training
         cmd = [
-            'python', 'main_train_eval.py',
+            'python', 'scripts/main_train_eval.py',
             f'--config={exp.config_file}',
             '--mode=train'
         ]
@@ -333,7 +333,7 @@ class IntegratedPipeline:
 
         # Build command
         cmd = [
-            'python', 'evaluate.py',
+            'python', 'scripts/evaluate.py',
             f'--config={exp.config_file}',
             '--n_samples=10000',  # Increased to 10000 for publication quality
             f'--n_eval_points={n_eval_points}',

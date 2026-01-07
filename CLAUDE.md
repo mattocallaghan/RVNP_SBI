@@ -43,7 +43,7 @@ bash run_ablation_study.sh --plots-only
 
 ### Single Experiment
 ```bash
-python integrated_pipeline.py --task=SIR --method=RVNP-NN --nobs=100
+python scripts/integrated_pipeline.py --task=SIR --method=RVNP-mu_hybrid --nobs=100
 ```
 
 ---
@@ -247,7 +247,7 @@ mkdir -p Data
 ### Config Not Found
 ```bash
 # Verify configs exist
-python verify_configs.py
+python scripts/verify_configs.py
 ```
 
 ### Check Progress
@@ -375,17 +375,17 @@ Panels:
 
 ### Verify All Configs
 ```bash
-python verify_configs.py
+python scripts/verify_configs.py
 ```
 
 ### Test ACAUC Implementation
 ```bash
-python test_acauc.py
+python scripts/test_acauc.py
 ```
 
 ### Test Time Tracker
 ```bash
-python time_tracker.py
+python src/time_tracker.py
 ```
 
 ### Load Specific Config

@@ -15,7 +15,7 @@ A task consists of:
 Step 1: Implement Simulator
 ----------------------------
 
-Add your simulator function to ``utils.py``::
+Add your simulator function to ``src/utils.py``::
 
     class MyTask:
         def __init__(self, key):
@@ -45,7 +45,7 @@ Add your simulator function to ``utils.py``::
 Step 2: Add Dataset Loading
 ----------------------------
 
-Add dataset generation to ``datasets.py``::
+Add dataset generation to ``src/datasets.py``::
 
     def get_dataset(config):
         ...
@@ -135,11 +135,11 @@ Step 4: Test
 
 Train your task::
 
-    python main_train_eval.py --config=configs/MyTask/ranpt_100_mu_hybrid.py --mode=train
+    python scripts/main_train_eval.py --config=configs/MyTask/ranpt_100_mu_hybrid.py --mode=train
 
 Evaluate::
 
-    python main_train_eval.py --config=configs/MyTask/ranpt_100_mu_hybrid.py --mode=eval
+    python scripts/main_train_eval.py --config=configs/MyTask/ranpt_100_mu_hybrid.py --mode=eval
 
 Example: Two Moons
 ------------------

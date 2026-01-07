@@ -1,12 +1,204 @@
 """
-Model utilities for parameter counting and analysis
+Model utilities for parameter counting, analysis, and model creation
 """
 
 import jax
 import jax.numpy as jnp
+import jax.random as jr
 import equinox as eqx
-from typing import Dict, Any
+from typing import Dict, Any, Tuple, Optional
 import json
+
+from .models.correction_model import (
+    SimpleCorrectionModel,
+    DiagonalNeuralCorrectionModel,
+    HybridCorrectionModel,
+    FullNeuralCorrectionModel,
+    MuHybridCorrectionModel,
+    GlobalCorrectionModel,
+    CorrectionModel
+)
+from .models.embeddings import (
+    StatisticEmbedding_spectra,
+    StatisticEmbedding_pendulum,
+    Discriminator,
+    ReconstructionDecoder,
+    ReconstructionDecoderSimple
+)
+from .losses import ShannonLossEmbedding
+
+
+def create_correction_model(key, config, correction_dim: int, flow_dimension: int):
+    """
+    Factory function to create correction model based on config.
+
+    Args:
+        key: JAX random key
+        config: Configuration object with model settings
+        correction_dim: Dimension of correction model output (embedding_dim or vector_dim)
+        flow_dimension: Dimension of theta parameters
+
+    Returns:
+        Initialized correction model instance
+    """
+    correction_type = getattr(config.model, 'correction_type', 'simple')
+
+    if correction_type == 'simple':
+        initial_var = getattr(config.model, 'initial_correction_variance', -2)
+        initial_covariance = jnp.full(correction_dim, initial_var)
+        return SimpleCorrectionModel(
+            key=key,
+            dim=correction_dim,
+            initial_covariance=initial_covariance
+        )
+
+    elif correction_type == 'diagonal_neural':
+        return DiagonalNeuralCorrectionModel(
+            key=key,
+            theta_dim=flow_dimension,
+            output_dim=correction_dim
+        )
+
+    elif correction_type == 'hybrid':
+        return HybridCorrectionModel(
+            key=key,
+            theta_dim=flow_dimension,
+            output_dim=correction_dim
+        )
+
+    elif correction_type == 'NN':
+        return MuHybridCorrectionModel(
+            key=key,
+            theta_dim=flow_dimension,
+            output_dim=correction_dim
+        )
+
+    elif correction_type == 'global':
+        return GlobalCorrectionModel(
+            key=key,
+            output_dim=correction_dim
+        )
+
+    elif correction_type == 'full_neural':
+        return FullNeuralCorrectionModel(
+            key=key,
+            theta_dim=flow_dimension,
+            output_dim=correction_dim
+        )
+
+    else:
+        return CorrectionModel(
+            key=key,
+            input_dim=correction_dim
+        )
+
+
+def create_embedding_models(key, config, embedding_dim: int, cond_dim: int) -> Tuple[eqx.Module, Optional[eqx.Module], Optional[eqx.Module], Optional[Any]]:
+    """
+    Factory function to create embedding, discriminator, decoder, and embedding loss.
+
+    Args:
+        key: JAX random key
+        config: Configuration object with model settings
+        embedding_dim: Dimension of embedding output
+        cond_dim: Dimension of conditioning (flow_dimension)
+
+    Returns:
+        Tuple of (embedding, discriminator, decoder, embedding_loss_function)
+        Returns (None, None, None, None) if embeddings not needed
+    """
+    dataset = config.data.dataset
+
+    # Only create embeddings for these datasets
+    if dataset not in ['spectra', 'pendulum']:
+        return None, None, None, None
+
+    key, key_emb = jr.split(key)
+    embedding_type = config.model.embedding
+    hidden_scale = config.model.hidden_scale
+
+    # Create embedding network
+    if dataset == 'spectra':
+        embedding = StatisticEmbedding_spectra(
+            key=key_emb,
+            in_channels=1,
+            how=embedding_type,
+            hidden_scale=hidden_scale,
+            z_dim=embedding_dim,
+            dropout_rate=0.1
+        )
+    else:  # pendulum
+        embedding = StatisticEmbedding_pendulum(
+            key=key_emb,
+            in_channels=1,
+            how=embedding_type,
+            hidden_scale=hidden_scale,
+            z_dim=embedding_dim,
+            dropout_rate=0.1
+        )
+
+    # Handle VAE vs InfoMax
+    if embedding_type == 'vae':
+        raise NotImplementedError(
+            "VAE embedding type is not yet implemented. "
+            "Use embedding_type='IM' for InfoMax (mutual information) embedding instead."
+        )
+
+    assert embedding_type == 'IM', "Embedding type must be 'vae' or 'IM'"
+
+    # Create discriminator and decoder for InfoMax
+    hidden_dim = 100
+    key, key_disc, key_dec = jr.split(key, 3)
+
+    discriminator = Discriminator(
+        key=key_disc,
+        z_dim=embedding_dim,
+        theta_dim=cond_dim,
+        hidden_dim=hidden_dim
+    )
+
+    # Determine output shape for decoder
+    if dataset == 'pendulum':
+        output_shape = config.data.vector_dim_inference  # 200 for pendulum
+    elif dataset == 'spectra':
+        output_shape = config.data.vector_dim  # 300 for spectra
+    else:
+        output_shape = config.data.vector_dim
+
+    print(f"Using output shape for decoder: {output_shape}")
+
+    # Choose decoder type based on dataset
+    if dataset == 'pendulum':
+        decoder = ReconstructionDecoderSimple(
+            key=key_dec,
+            latent_dim=embedding_dim,
+            out_channels=1,
+            output_shape=output_shape
+        )
+        print("Using ReconstructionDecoderSimple for pendulum dataset")
+    else:
+        decoder = ReconstructionDecoder(
+            key=key_dec,
+            latent_dim=embedding_dim,
+            out_channels=1,
+            output_shape=output_shape
+        )
+        print(f"Using ReconstructionDecoder with final linear layer for {dataset}")
+
+    # Set reconstruction loss parameters
+    if dataset == 'spectra':
+        lambda_reconstruction = 0.0
+        use_decoder = False
+    else:
+        lambda_reconstruction = 0.0
+        use_decoder = False
+
+    embedding_loss_function = ShannonLossEmbedding(
+        lambda_reconstruction=lambda_reconstruction,
+        use_decoder=use_decoder
+    )
+
+    return embedding, discriminator, decoder, embedding_loss_function
 
 
 def count_parameters(model: eqx.Module) -> int:

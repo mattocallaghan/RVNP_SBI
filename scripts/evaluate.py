@@ -1,0 +1,18 @@
+#!/usr/bin/env python3
+"""
+Evaluation Script Wrapper
+
+Provides command-line interface for model evaluation.
+This wrapper imports from src/ and handles CLI arguments.
+"""
+
+import sys
+import os
+
+# Add project root to path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from src.evaluate import main
+
+if __name__ == "__main__":
+    main()

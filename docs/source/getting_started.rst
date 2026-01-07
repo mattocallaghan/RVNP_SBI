@@ -40,11 +40,11 @@ Training a Single Experiment
 
 Train RVNP-NN on the Compressed Sensing task with 100 observations::
 
-    python main_train_eval.py --config=configs/CS_task/ranpt_100_mu_hybrid.py --mode=train
+    python scripts/main_train_eval.py --config=configs/CS_task/ranpt_100_mu_hybrid.py --mode=train
 
 Train NPE baseline::
 
-    python main_train_eval.py --config=configs/CS_task/npe_cs_task.py --mode=train
+    python scripts/main_train_eval.py --config=configs/CS_task/npe_cs_task.py --mode=train
 
 Running All Experiments
 ~~~~~~~~~~~~~~~~~~~~~~~~

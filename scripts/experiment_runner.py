@@ -183,7 +183,7 @@ class ExperimentRunner:
 
         # Build command
         cmd = [
-            'python', 'main_train_eval.py',
+            'python', 'scripts/main_train_eval.py',
             f'--config={spec.config_path}',
             '--mode=train'
         ]

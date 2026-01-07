@@ -42,7 +42,7 @@ Install dependencies::
 
 Run RVNP on the Compressed Sensing task::
 
-    python main_train_eval.py --config=configs/CS_task/ranpt_100_mu_hybrid.py --mode=train
+    python scripts/main_train_eval.py --config=configs/CS_task/ranpt_100_mu_hybrid.py --mode=train
 
 Or run all main experiments::
 

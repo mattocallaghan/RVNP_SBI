@@ -23,7 +23,7 @@ Models
 Correction Models
 ~~~~~~~~~~~~~~~~~
 
-.. automodule:: models.correction_model
+.. automodule:: src.models.correction_model
    :members:
    :undoc-members:
    :show-inheritance:
@@ -31,7 +31,7 @@ Correction Models
 Embeddings
 ~~~~~~~~~~
 
-.. automodule:: models.embeddings
+.. automodule:: src.models.embeddings
    :members:
    :undoc-members:
    :show-inheritance:
@@ -39,7 +39,7 @@ Embeddings
 Priors
 ~~~~~~
 
-.. automodule:: models.priors
+.. automodule:: src.models.priors
    :members:
    :undoc-members:
    :show-inheritance:

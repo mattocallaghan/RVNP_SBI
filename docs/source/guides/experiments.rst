@@ -106,6 +106,6 @@ Config Not Found
 
 Verify all configs exist::
 
-    python verify_configs.py
+    python scripts/verify_configs.py
 
 For complete experiment configuration details, see the `README <https://github.com/USERNAME/RVNP_SBI/blob/main/README.md>`_.

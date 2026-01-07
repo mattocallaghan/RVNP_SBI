@@ -6,8 +6,7 @@ import equinox as eqx
 import optax
 import functools
 from tqdm import tqdm
-from .losses import MaximumLikelihoodLoss,ShannonLossEmbedding,RVNPLoss
-from .models.correction_model import CorrectionModel, SimpleCorrectionModel, DiagonalNeuralCorrectionModel, HybridCorrectionModel, FullNeuralCorrectionModel, MuHybridCorrectionModel, GlobalCorrectionModel
+from .losses import MaximumLikelihoodLoss,RVNPLoss
 from tensorflow.summary import create_file_writer
 from .utils import get_optimizer
 import os
@@ -19,9 +18,15 @@ from .activation_functions import get_activation
 from flowjax.flows import masked_autoregressive_flow,block_neural_autoregressive_flow,coupling_flow
 from flowjax.bijections import RationalQuadraticSpline
 import paramax
-from .models.embeddings import StatisticEmbedding,StatisticEmbedding_pendulum,StatisticEmbedding_spectra,StatisticDecoder,Discriminator,ReconstructionDecoder,ReconstructionDecoderSimple
 from .models.priors import get_prior_from_config
-from .model_utils import get_ranpt_model_breakdown, print_parameter_breakdown, save_parameter_breakdown, count_parameters
+from .model_utils import (
+    get_ranpt_model_breakdown,
+    print_parameter_breakdown,
+    save_parameter_breakdown,
+    count_parameters,
+    create_correction_model,
+    create_embedding_models
+)
 
 
 
@@ -151,93 +156,33 @@ class Rational_Quadratic_Spline_w_posterior(Normalizing_Flow):
         
         ############# Embedding (only if needed)
         ###############################
+        self.key, subkey = jr.split(self.key)
         if self.use_embeddings:
-            self.key,subkey=jr.split(self.key)
-            self.embedding_type=self.config.model.embedding
-            if(self.config.data.dataset == 'spectra'):
-                self.embedding=StatisticEmbedding_spectra(key=subkey, in_channels=1,how=self.embedding_type,hidden_scale=self.config.model.hidden_scale ,z_dim=self.embedding_dim, dropout_rate=0.1)
-            else:
-                self.embedding=StatisticEmbedding_pendulum(key=subkey, in_channels=1,how=self.embedding_type,hidden_scale=self.config.model.hidden_scale ,z_dim=self.embedding_dim, dropout_rate=0.1)
-            self.key,subkey=jr.split(self.key)
-            
-            if(self.embedding_type=='vae'): 
-                raise NotImplementedError(
-                    "VAE embedding type is not yet implemented. "
-                    "Use embedding_type='IM' for InfoMax (mutual information) embedding instead."
-                )
-            else:
-                assert self.embedding_type=='IM', "Embedding type must be 'vae' or 'IM'"
-                hidden_dim=100
-                
-                # Create separate discriminator and decoder
-                self.key, key_disc, key_dec = jr.split(self.key, 3)
-                
-                # Discriminator for Shannon/InfoMax loss (z + theta → logit)
-                self.discriminator = Discriminator(key=key_disc, z_dim=self.embedding_dim, theta_dim=self.cond_dim, hidden_dim=hidden_dim)
-                
-                # Decoder for reconstruction loss (z → reconstructed x)
-                # Use appropriate output shape for the dataset
-                if self.config.data.dataset == 'pendulum':
-                    output_shape = self.config.data.vector_dim_inference  # 200 for pendulum
-                elif self.config.data.dataset == 'spectra':
-                    output_shape = self.config.data.vector_dim  # 300 for spectra
-                else:
-                    output_shape = self.config.data.vector_dim  # Default
-            
-                print("Using output shape for decoder:", output_shape)
-                
-                # Choose decoder type based on dataset
-                if self.config.data.dataset == 'pendulum':
-                    # Use simple decoder (no final linear layer) for pendulum
-                    self.decoder = ReconstructionDecoderSimple(key=key_dec, latent_dim=self.embedding_dim, out_channels=1, output_shape=output_shape)
-                    print("Using ReconstructionDecoderSimple for pendulum dataset")
-                else:
-                    # Use full decoder (with final linear layer) for spectra and other datasets
-                    self.decoder = ReconstructionDecoder(key=key_dec, latent_dim=self.embedding_dim, out_channels=1, output_shape=output_shape)
-                    print("Using ReconstructionDecoder with final linear layer for", self.config.data.dataset)
-                
-                if(self.config.data.dataset == 'spectra'):
-                    lambda_reconstruction = 0.0  # Weight for reconstruction loss
-                    use_decoder=False
-                else:
-                    lambda_reconstruction = 0.0
-                    use_decoder=False
-                self.embedding_loss_function=ShannonLossEmbedding(lambda_reconstruction=lambda_reconstruction,  # Weight for reconstruction loss
-      use_decoder=use_decoder,)
-            self.key,self.subkey=jr.split(self.key)
+            self.embedding, self.discriminator, self.decoder, self.embedding_loss_function = create_embedding_models(
+                key=subkey,
+                config=self.config,
+                embedding_dim=self.embedding_dim,
+                cond_dim=self.cond_dim
+            )
+            self.embedding_type = self.config.model.embedding
         else:
             # No embeddings for low-dimensional data
             self.embedding = None
-            self.decoder = None
             self.discriminator = None
+            self.decoder = None
             self.embedding_loss_function = None
 
         ###############################
         ############# Correction Model
         ###############################
-        self.key,subkey=jr.split(self.key)
-        correction_type = getattr(self.config.model, 'correction_type', 'simple')  # Default to simple
-        if self.use_embeddings:
-            correction_dim = self.embedding_dim
-        else:
-            correction_dim = config.data.vector_dim
-        if correction_type == 'simple':
-            # Initialize with smaller covariance if specified in config
-            initial_var = getattr(self.config.model, 'initial_correction_variance', -2)
-            initial_covariance = jnp.full(correction_dim, initial_var)
-            self.correction_model = SimpleCorrectionModel(key=subkey, dim=correction_dim, initial_covariance=initial_covariance)
-        elif correction_type == 'diagonal_neural':
-            self.correction_model = DiagonalNeuralCorrectionModel(key=subkey, theta_dim=self.flow_dimension, output_dim=correction_dim)
-        elif correction_type == 'hybrid':
-            self.correction_model = HybridCorrectionModel(key=subkey, theta_dim=self.flow_dimension, output_dim=correction_dim)
-        elif correction_type == 'NN':
-            self.correction_model = MuHybridCorrectionModel(key=subkey, theta_dim=self.flow_dimension, output_dim=correction_dim)
-        elif correction_type == 'global':
-            self.correction_model = GlobalCorrectionModel(key=subkey, output_dim=correction_dim)
-        elif correction_type == 'full_neural':
-            self.correction_model = FullNeuralCorrectionModel(key=subkey, theta_dim=self.flow_dimension, output_dim=correction_dim)
-        else:
-            self.correction_model = CorrectionModel(key=subkey, input_dim=correction_dim)
+        self.key, subkey = jr.split(self.key)
+        correction_dim = self.embedding_dim if self.use_embeddings else config.data.vector_dim
+        self.correction_model = create_correction_model(
+            key=subkey,
+            config=self.config,
+            correction_dim=correction_dim,
+            flow_dimension=self.flow_dimension
+        )
         
         
         ###############################
@@ -396,7 +341,7 @@ class Rational_Quadratic_Spline_w_posterior(Normalizing_Flow):
                 * config.model.train_simulator (Stage 2)
                 * config.model.train_posterior_init (Stage 3)
             - The simulator flow is trained only once but reused by all other components
-            - Config flags control training epochs: warmup_epochs, final_epochs, final_posterior_epochs
+            - Config flags control training epochs: warmup_epochs, final_epochs
 
         Example:
             >>> key = jax.random.PRNGKey(0)
@@ -429,26 +374,19 @@ class Rational_Quadratic_Spline_w_posterior(Normalizing_Flow):
         print("Stage 4: Joint training")
         key, subkey = jr.split(key)
         key,self.flow,self.correction_model = self.train_single_stage(subkey, 'joint',self.flow,self.correction_model, train_data, inference_data)
-        # Final posterior tuning with fixed correction model (optional)
-        if getattr(self.config.model, 'train_final_posterior', False):
-            print("Final posterior tuning with fixed correction model...")
-            key, subkey = jr.split(key)
-            key,self.flow,self.correction_model = self.train_single_stage(subkey, 'final_posterior',self.flow,self.correction_model, train_data, inference_data)
+
         print("Training system completed.")
         return key
     
     
     def train_single_stage(self, key, stage_name,flow,correction_model, train_data, inference_data, max_epochs=None):
-        """Train a single stage with appropriate loss function.
+        """Train joint posterior and correction model.
 
-        Trains either the posterior flow, correction model, or both jointly depending on
-        the stage name and training flags.
+        Trains both the posterior flow and correction model jointly using RVNPLoss.
 
         Args:
             key: JAX random key for stochastic operations
-            stage_name: Name of the training stage, one of:
-                - 'joint': Train both posterior and correction jointly
-                - 'final_posterior': Train posterior only with fixed correction
+            stage_name: Name of the training stage (currently only 'joint' is used)
             flow: Current posterior flow q_φ(θ|x) to be trained
             correction_model: Current correction model r_ψ(x̂|x,θ) to be trained
             train_data: Training dataset dictionary containing:
@@ -465,26 +403,13 @@ class Rational_Quadratic_Spline_w_posterior(Normalizing_Flow):
                 - flow: Trained posterior flow
                 - correction_model: Trained correction model
 
-        Stage Descriptions:
-            joint:
-                Jointly trains both the posterior flow q_φ(θ|x̂) and correction model
-                r_ψ(x̂|x,θ) using the RVNPLoss. This stage combines the
-                posterior likelihood, KL divergence between correction and simulator, and
-                shrinkage regularization.
-
-            final_posterior:
-                Fine-tunes the posterior flow q_φ(θ|x̂) using RVNPLoss. This stage provides
-                additional training to improve calibration and help the posterior better match
-                the corrected observations.
-
         Notes:
-            - Both stages use RVNPLoss for joint training of posterior and correction
-            - Training epochs controlled by config.training.final_epochs (joint) or
-              config.training.final_posterior_epochs (final_posterior)
+            - Uses RVNPLoss for joint training of posterior and correction
+            - Training epochs controlled by config.training.final_epochs
             - Early stopping patience controlled by config.training.max_patience
 
         Raises:
-            ValueError: If stage_name is not one of {'joint', 'final_posterior'}
+            ValueError: If stage_name is not 'joint'
 
         Example:
             >>> key = jax.random.PRNGKey(0)
@@ -497,47 +422,26 @@ class Rational_Quadratic_Spline_w_posterior(Normalizing_Flow):
         eval_data_prepared = self.eval_data
 
 
-        if stage_name == "joint":
-            # Joint training using RVNPLoss
-            print(f"Training {stage_name} using RVNPLoss (joint training)...")
-            key, subkey = jr.split(key)
-            flow, correction_model, stage_losses = self.fit_posterior_with_simplified_loss(
-                key=subkey,
-                dist=flow,
-                correction_model=correction_model,
-                embedding_model=self.embedding,
-                x=train_data_prepared,
-                eval=eval_data_prepared,
-                inference_data=inference_data,
-                learning_rate=self.config.optim.lr,
-                max_epochs=max_epochs,
-                max_patience=self.config.training.max_patience,
-                val_prop=self.config.training.validation_split
-            )
-            
-        elif stage_name == "final_posterior":
-            # Final posterior tuning using RVNPLoss
-            print(f"Training {stage_name} using RVNPLoss (final posterior tuning)...")
-            key, subkey = jr.split(key)
-            flow, correction_model, stage_losses = self.fit_posterior_with_simplified_loss(
-                key=subkey,
-                dist=flow,
-                correction_model=correction_model,
-                embedding_model=self.embedding,
-                x=train_data_prepared,
-                eval=eval_data_prepared,
-                inference_data=inference_data,
-                learning_rate=self.config.optim.lr,
-                max_epochs=self.config.training.final_posterior_epochs,
-                max_patience=self.config.training.max_patience,
-                val_prop=self.config.training.validation_split
-            )
-            print("Final posterior tuning completed with fixed correction model")
-            log_correction_model_diagnostics(self.correction_model, f"Final Posterior Tuning - {stage_name}")
-            
-        else:
-            raise ValueError(f"Unknown stage name: {stage_name}")
-            
+        if stage_name != "joint":
+            raise ValueError(f"Unknown stage name: {stage_name}. Only 'joint' training is supported.")
+
+        # Joint training using RVNPLoss
+        print("Training using RVNPLoss (joint training)...")
+        key, subkey = jr.split(key)
+        flow, correction_model, stage_losses = self.fit_posterior_with_simplified_loss(
+            key=subkey,
+            dist=flow,
+            correction_model=correction_model,
+            embedding_model=self.embedding,
+            x=train_data_prepared,
+            eval=eval_data_prepared,
+            inference_data=inference_data,
+            learning_rate=self.config.optim.lr,
+            max_epochs=max_epochs,
+            max_patience=self.config.training.max_patience,
+            val_prop=self.config.training.validation_split
+        )
+
         if not hasattr(self, 'losses') or self.losses is None:
             self.losses = stage_losses
         key, subkey = jr.split(key)
