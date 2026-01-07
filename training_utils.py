@@ -10,7 +10,32 @@ from dataclasses import dataclass
 
 @dataclass
 class ExperimentConfig:
-    """Configuration for experiment partitioning."""
+    """Configuration for partitioning evaluation points across multiple experiments.
+
+    Determines how many independent experiments to run and how many test points
+    each should use. Used to manage computational resources and memory for large
+    evaluation runs.
+
+    Attributes:
+        num_experiments: Number of independent experiment runs
+        points_per_experiment: Test points per individual experiment
+        total_points_needed: Total test points across all experiments
+
+    Strategy:
+        Balances number of experiments with points per experiment to achieve
+        statistically meaningful results while managing computational cost:
+
+        - num_tests >= 100: 1 experiment (single large run)
+        - num_tests == 50: 2 experiments × 50 points = 100 total
+        - num_tests == 10: 10 experiments × 10 points = 100 total
+        - num_tests == 1: 50 experiments × 1 point = 50 total
+
+    Example:
+        >>> config = ExperimentConfig.from_num_tests(num_tests=10)
+        >>> print(config.num_experiments)  # 10
+        >>> print(config.points_per_experiment)  # 10
+        >>> print(config.total_points_needed)  # 100
+    """
     num_experiments: int
     points_per_experiment: int
     total_points_needed: int

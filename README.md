@@ -1,18 +1,24 @@
 # RVNP-SBI: Robust Neural Variational Posterior Estimation
 
-This repository implement the Robust neural variational posteiror estimation from the paper: "Robust amortised simulation-based inference under model misspecification using variational inference", O'Callaghan et al 2025
+[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![JAX](https://img.shields.io/badge/JAX-0.4+-orange.svg)](https://github.com/google/jax)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+This repository implements Robust Variational Neural Posterior estimation from the paper: "Robust amortised simulation-based inference under model misspecification using variational inference", O'Callaghan et al 2026
 
 ## Algorithms Implemented
 
-This codebase implements several simulation-based inference algorithms which are ran using the main
-- **RVNP (Robust Variational Neural Posterior)** - The main algorithm for robust variational posterior estimation
-- **RVNP-T (RVNP-Tuned)** - Tuned variant of RVNP 
-- **NPE (Neural Posterior Estimation)** - Standard neural posterior estimation baseline
-- **NNPE (Noisy Neural Posterior Estimation)** - Noisy neural posterior estimation from Ward et al
+This codebase implements several simulation-based inference algorithms for robust posterior estimation under model misspecification:
 
-**RVNP and RVNP-T are the primary algorithms** of this repository, designed to handle model misspecification and provide robust posterior inference.
+- **RVNP-mu_hybrid** - Primary method: Neural mean + neural covariance correction
+- **RVNP-simple** - Baseline: Fixed diagonal covariance correction
+- **NPE (Neural Posterior Estimation)** - Standard baseline (no correction)
+- **NNPE (Noisy Neural Posterior Estimation)** - Noisy posterior baseline from Ward et al
+
+**RVNP-mu_hybrid is the primary algorithm** of this repository, designed to handle significant model misspecification by learning both parameter-dependent mean shifts and adaptive covariance structures.
 
 ## Table of Contents
+- [Citation](#citation)
 - [Quick Start](#quick-start)
 - [Directory Structure](#directory-structure)
 - [Installation](#installation)
@@ -21,7 +27,22 @@ This codebase implements several simulation-based inference algorithms which are
 - [Tasks and Simulators](#tasks-and-simulators)
 - [Data Requirements](#data-requirements)
 
+## Citation
+
+If you use this code in your research, please cite:
+
+```bibtex
+@article{ocallaghan2026robust,
+  title={Robust amortised simulation-based inference under model misspecification using variational inference},
+  author={O'Callaghan, M and others},
+  journal={ICML},
+  year={2026}
+}
+```
+
 ## Quick Start
+
+**📚 Additional Documentation**: [QUICKSTART.md](QUICKSTART.md) | [CLAUDE.md](CLAUDE.md) | [EXPERIMENTS_README.md](EXPERIMENTS_README.md)
 
 1. **Install Dependencies:**
    ```bash
@@ -141,9 +162,9 @@ def get_config():
     
     # === CORRECTION MODEL (RVNP Core Feature) ===
     config.model.correction_type = 'simple'                    # Correction model type:
-                                                                # 'simple' - diagonal covariance
-                                                                # 'diagonal_neural' - neural diagonal
-                                                                # 'neural' - full neural correction
+                                                                # 'simple' - Fixed diagonal covariance (RVNP-simple)
+                                                                # 'mu_hybrid' - Neural mean + covariance (RVNP-mu_hybrid, PRIMARY)
+                                                                # 'none' - No correction (NPE baseline)
     config.model.initial_correction_variance = -3              # Initial correction variance (log scale)
     
     # === VARIATIONAL TRAINING PARAMETERS ===
@@ -192,7 +213,8 @@ def get_config():
 
 **Correction Model:**
 - Core innovation of RVNP for handling model misspecification
-- `diagonal_neural`: Neural network learns diagonal correction
+- `simple`: Fixed diagonal covariance (RVNP-simple baseline)
+- `mu_hybrid`: Neural mean + covariance correction (PRIMARY method)
 - Helps adjust for discrepancies between simulator and reality
 
 **Variational Training:**
@@ -206,12 +228,12 @@ def get_config():
 
 ### RVNP vs Other Methods
 
-| Method | Correction Model | Multi-Stage | Variational |
-|--------|-----------------|-------------|-------------|------------|
-| NPE | ❌ | ❌ | ❌  |
-| NNPE | ❌ | ❌ | ✅  |
-| RVNP | ✅ | ✅ | ✅  |
-| RVNP-T | ✅ | ✅ | ✅  |
+| Method | Mean Correction | Covariance Correction | Variational | Use Case |
+|--------|----------------|----------------------|-------------|----------|
+| NPE | ❌ | ❌ | ❌ | Well-specified simulator |
+| NNPE | ❌ | ❌ | ✅ | Noisy observations |
+| RVNP-simple | ❌ | ✅ (Fixed Diagonal) | ✅ | Minimal misspecification |
+| RVNP-mu_hybrid | ✅ (Neural) | ✅ (Hybrid) | ✅ | Significant misspecification (PRIMARY) |
 
 ## Tasks and Simulators
 

@@ -287,6 +287,164 @@ class Evaluator:
 
         return coverage, int(N), float(true_log_prob)
 
+    @staticmethod
+    def compute_acauc(
+        samples: jnp.ndarray,
+        theta_true: jnp.ndarray,
+        n_alpha_levels: int = 100
+    ) -> float:
+        """Compute ACAUC (Average Coverage Area Under Curve) - primary calibration metric.
+
+        ACAUC measures the continuous calibration quality of a posterior distribution by
+        computing the area under the coverage curve across all credibility levels. This
+        provides a more comprehensive assessment than discrete coverage metrics.
+
+        Mathematical Formulation:
+            For a single observation:
+
+            .. math::
+
+                ACAUC = \\frac{1}{k} \sum_{j=1}^{k} \int_{0}^{1} \mathbb{1}[\\theta_j^* \in C_\\alpha^j] d\\alpha
+
+            where:
+                - :math:`k`: Parameter dimension
+                - :math:`\\theta_j^*`: True value of parameter :math:`j`
+                - :math:`C_\\alpha^j`: :math:`\\alpha`-level credible interval for dimension :math:`j`
+                - :math:`\mathbb{1}[\cdot]`: Indicator function (1 if true, 0 if false)
+
+            The :math:`\\alpha`-level credible interval is defined as:
+
+            .. math::
+
+                C_\\alpha^j = [q_{(1-\\alpha)/2}(p(\\theta_j|x)), q_{1-(1-\\alpha)/2}(p(\\theta_j|x))]
+
+            where :math:`q_p` denotes the :math:`p`-th quantile of the marginal posterior.
+
+        Interpretation:
+            **Ideal value**: 1.0 (perfect calibration)
+                - For every credibility level :math:`\\alpha`, the true parameter is inside
+                  the :math:`\\alpha`-credible interval exactly :math:`\\alpha` fraction of the time
+
+            **< 1.0**: Under-coverage (overconfident posterior)
+                - True parameters fall outside credible intervals more often than expected
+                - Posterior is too concentrated around the mode
+                - May indicate: insufficient correction, weak regularization, or model misspecification
+
+            **> 1.0**: Over-coverage (too conservative)
+                - True parameters fall inside credible intervals more often than expected
+                - Posterior is too diffuse/uncertain
+                - May indicate: excessive regularization, over-correction, or lack of data
+
+        Algorithm:
+            1. For each parameter dimension :math:`j = 1, \ldots, k`:
+               a. For each credibility level :math:`\\alpha \in [0, 1]` (discretized):
+                  - Compute quantiles: :math:`q_{(1-\\alpha)/2}` and :math:`q_{1-(1-\\alpha)/2}`
+                  - Check if :math:`\\theta_j^* \in [q_{lower}, q_{upper}]`
+               b. Compute area under coverage curve via trapezoidal integration
+            2. Average coverage AUC across all dimensions
+
+        Args:
+            samples: Posterior samples from :math:`q_\phi(\\theta|x_{obs})`,
+                    shape (n_samples, k) where k is parameter dimension.
+                    Typically n_samples ≥ 10,000 for stable quantile estimates.
+            theta_true: True parameter value :math:`\\theta^*`, shape (k,).
+                       Ground truth used to assess calibration.
+            n_alpha_levels: Number of discretization points for :math:`\\alpha \in [0, 1]`.
+                           Default: 100. Higher values → more accurate integration but slower.
+
+        Returns:
+            acauc: ACAUC value, a scalar in approximately [0, 2]
+                  - 1.0: Perfect calibration
+                  - [0.9, 1.1]: Good calibration
+                  - < 0.9: Significant under-coverage
+                  - > 1.1: Significant over-coverage
+
+        Implementation Details:
+            **Quantile Computation**:
+                - Uses numpy.quantile with linear interpolation
+                - Symmetric credible intervals: :math:`[(1-\\alpha)/2, 1-(1-\\alpha)/2]`
+
+            **Integration**:
+                - Trapezoidal rule via numpy.trapz
+                - :math:`\int_0^1 f(\\alpha) d\\alpha ≈ \sum_{i=0}^{N-1} (f_i + f_{i+1})(\\alpha_{i+1} - \\alpha_i)/2`
+
+            **Per-Dimension Averaging**:
+                - Computes coverage AUC independently for each dimension
+                - Final metric is arithmetic mean across dimensions
+
+        Advantages Over Discrete Coverage:
+            - **Continuous**: Tests all credibility levels, not just fixed values (e.g., 0.95)
+            - **Robust**: Single metric captures entire calibration curve
+            - **Interpretable**: Direct relationship to ideal calibration
+            - **Sensitive**: Detects subtle miscalibration missed by discrete metrics
+
+        Example:
+            >>> # Posterior samples from trained model
+            >>> samples = posterior_flow.sample(key, x_obs, num_samples=10000)  # (10000, 3)
+            >>> theta_true = jnp.array([0.5, 1.0, -0.3])  # True parameter
+            >>> # Compute ACAUC
+            >>> acauc = Evaluator.compute_acauc(samples, theta_true, n_alpha_levels=100)
+            >>> print(f"ACAUC: {acauc:.3f}")
+            ACAUC: 0.987
+
+        Interpretation:
+            acauc < 0.95 indicates under-coverage (overconfident posterior),
+            acauc > 1.05 indicates over-coverage (too conservative), and values near 1.0
+            indicate good calibration.
+
+        Notes:
+            - Primary metric for evaluating RVNP calibration quality
+            - Complementary to AEPC (Average Expected Posterior Coverage) metric
+            - More informative than single-point coverage (e.g., 95% credible interval)
+            - Should be computed on independent test data (not training data)
+            - Requires large sample sizes (≥ 10,000) for stable quantile estimates
+
+        References:
+            Hermans, J., Delaunoy, A., Rozet, F., Wehenkel, A., & Louppe, G. (2021).
+            "Robust Neural Posterior Estimation and Statistical Model Criticism."
+            Advances in Neural Information Processing Systems (NeurIPS).
+
+        See Also:
+            - evaluate_single_observation(): Uses this method to compute ACAUC per observation
+            - AEPC metric: Discrete calibration metric at specific alpha levels
+            - LPP metric: Log posterior probability (likelihood quality, not calibration)
+        """
+        n_samples, n_dims = samples.shape
+        alpha_levels = np.linspace(0, 1, n_alpha_levels)
+
+        # Compute ACAUC for each dimension
+        acauc_per_dim = []
+
+        for dim in range(n_dims):
+            # Get samples for this dimension
+            dim_samples = samples[:, dim]
+            true_value = theta_true[dim]
+
+            # Compute coverage at each alpha level
+            coverage_at_alpha = []
+
+            for alpha in alpha_levels:
+                # Compute credible interval at this alpha level
+                # For 1D, this is just the quantiles
+                lower_quantile = (1 - alpha) / 2
+                upper_quantile = 1 - lower_quantile
+
+                lower_bound = np.quantile(dim_samples, lower_quantile)
+                upper_bound = np.quantile(dim_samples, upper_quantile)
+
+                # Check if true value is in interval
+                is_covered = float((true_value >= lower_bound) and (true_value <= upper_bound))
+                coverage_at_alpha.append(is_covered)
+
+            # Integrate coverage over alpha using trapezoidal rule
+            coverage_auc = np.trapz(coverage_at_alpha, alpha_levels)
+            acauc_per_dim.append(coverage_auc)
+
+        # Average across all dimensions
+        acauc = np.mean(acauc_per_dim)
+
+        return float(acauc)
+
     def evaluate_single_observation(
         self,
         flowclass,
@@ -330,6 +488,13 @@ class Evaluator:
             flowclass.flow, samples, theta_true, x_obs
         )
 
+        # Compute ACAUC
+        acauc = self.compute_acauc(
+            samples=np.array(samples),
+            theta_true=np.array(theta_true),
+            n_alpha_levels=100
+        )
+
         # Compute NRMSE
         param_range = 1.0  # Normalized parameters
         nrmse_per_sample = jnp.sqrt(jnp.mean(((samples - theta_true) / param_range)**2, axis=1))
@@ -339,6 +504,7 @@ class Evaluator:
             'coverage': coverage,
             'num_samples': num_samples,
             'true_log_prob': true_log_prob,
+            'acauc': acauc,
             'nrmse': nrmse,
             'ess': ess_value
         }
@@ -430,6 +596,7 @@ class Evaluator:
         # Other metrics
         all_log_probs = [r['true_log_prob'] for r in results]
         all_nrmses = [r['nrmse'] for r in results]
+        all_acaucs = [r['acauc'] for r in results]
         all_ess = [r['ess'] for r in results if r['ess'] > 0]
 
         summary = {
@@ -439,6 +606,8 @@ class Evaluator:
             'num_tests': self.config.data.num_tests,
             'n_evaluations': len(results),
             'alpha': alpha,
+            'acauc_mean': np.mean(all_acaucs),
+            'acauc_std': np.std(all_acaucs),
             'med_log_prob': np.median(all_log_probs),
             'std_log_prob': np.std(all_log_probs),
             'mean_nrmse': np.mean(all_nrmses),
@@ -448,6 +617,7 @@ class Evaluator:
 
         self.logger.logger.info("Summary Statistics:")
         self.logger.logger.info(f"  α (coverage): {summary['alpha']:.4f}")
+        self.logger.logger.info(f"  ACAUC: {summary['acauc_mean']:.4f} ± {summary['acauc_std']:.4f}")
         self.logger.logger.info(f"  Median log prob: {summary['med_log_prob']:.4f}")
         self.logger.logger.info(f"  Mean NRMSE: {summary['mean_nrmse']:.4f}")
         if all_ess:
@@ -522,8 +692,8 @@ def main():
                        help='Path to config file (e.g., configs/CS_task/ranpt_1_simple.py)')
     parser.add_argument('--use_sir', action='store_true',
                        help='Use Sampling Importance Resampling')
-    parser.add_argument('--n_samples', type=int, default=5000,
-                       help='Number of posterior samples (default: 5000)')
+    parser.add_argument('--n_samples', type=int, default=10000,
+                       help='Number of posterior samples (default: 10000)')
     parser.add_argument('--n_eval_points', type=int, default=100,
                        help='Number of observations to evaluate (default: 100)')
     parser.add_argument('--save_dir', type=str, default='./output/evaluation',

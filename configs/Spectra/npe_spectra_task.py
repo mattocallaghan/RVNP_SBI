@@ -19,6 +19,7 @@ def get_config():
     config.training.batch_size = 2**10
     config.data.num_tests=1
     config.model.name = 'npe'  # Use standard NPE model
+    config.model.correction_type = 'none'  # NPE baseline - no correction
     config.training.use_initialization=False  # NPE uses simple training, no initialization needed
     config.training.init_epochs=0  # No initialization for NPE
     config.training.warmup_epochs=0  # No warmup for NPE

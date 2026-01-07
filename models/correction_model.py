@@ -853,18 +853,132 @@ class FullNeuralCorrectionModel(eqx.Module):
 
 
 class MuHybridCorrectionModel(eqx.Module):
-    """
-    Mu-hybrid correction model: r_ψ(x̂|x,θ) = N(x̂; x + μ_global + μ_θ(θ), L_hybrid(θ) L_hybrid(θ)^T)
-    
-    Extends HybridCorrectionModel by adding both global and theta-dependent mean shifts.
-    - Mean: μ = x + μ_global + μ_θ(θ) where μ_global is learnable bias and μ_θ is a neural network of theta
-    - Covariance: Same hybrid structure as HybridCorrectionModel
-    
-    Key features:
-    - Global mean shift handles constant systematic bias
-    - Theta-dependent mean shift allows parameter-specific bias correction
-    - Maintains hybrid covariance structure for flexibility
-    - Useful when misspecification has both constant and parameter-dependent components
+    """Mu-hybrid correction model with neural mean and covariance.
+
+    The primary RVNP correction model that learns both a parameter-dependent mean shift
+    and a hybrid covariance structure to correct for model misspecification.
+
+    Mathematical Formulation:
+        The correction distribution is defined as:
+
+        .. math::
+
+            r_\psi(\hat{x}|x,\\theta) = N(\hat{x}; \mu(x,\\theta), \Sigma(\\theta))
+
+    Mean Function:
+        .. math::
+
+            \mu(x,\\theta) = x + \mu_{global} + \mu_\\theta(\\theta)
+
+        where:
+            - :math:`x`: Original observation (identity component preserves simulator output)
+            - :math:`\mu_{global}`: Learnable global bias correction vector (output_dim,)
+            - :math:`\mu_\\theta(\\theta)`: Neural network producing parameter-dependent shift
+
+        The mean shift decomposes misspecification into:
+            1. **Constant bias** (:math:`\mu_{global}`): Systematic errors independent of :math:`\\theta`
+            2. **Parameter-dependent bias** (:math:`\mu_\\theta(\\theta)`): Errors varying with :math:`\\theta`
+
+    Covariance Function:
+        .. math::
+
+            \Sigma(\\theta) = L_{hybrid}(\\theta) L_{hybrid}(\\theta)^T
+
+            L_{hybrid}(\\theta) = L_{global} + diag(\sigma_{local}(\\theta))
+
+        where:
+            - :math:`L_{global}`: Global lower-triangular Cholesky factor (learned, fixed across :math:`\\theta`)
+            - :math:`\sigma_{local}(\\theta)`: Neural network outputs per-dimension scaling factors
+            - :math:`diag(\cdot)`: Diagonal matrix constructor
+
+        The hybrid structure combines:
+            1. **Global correlations** (:math:`L_{global}`): Captures consistent inter-dimensional relationships
+            2. **Local scaling** (:math:`diag(\sigma_{local}(\\theta))`): Adjusts uncertainty per :math:`\\theta`
+
+    Shrinkage Prior:
+        The model is regularized via:
+
+        .. math::
+
+            L_{shrinkage} = \lambda_{shrinkage} \cdot E_\\theta[\|\mu_\\theta(\\theta)\|^2]
+
+        This encourages the neural mean shift to remain small when misspecification is minimal,
+        preventing overfitting. The global bias :math:`\mu_{global}` is NOT penalized, allowing
+        it to capture persistent systematic errors.
+
+    Attributes:
+        L_global_raw: Raw parameters for global Cholesky factor (output_dim, output_dim)
+        local_cholesky_net: MLP mapping :math:`\\theta` to local diagonal scaling (output_dim,)
+        mu_global: Global mean shift vector (output_dim,)
+        mean_shift_net: MLP mapping :math:`\\theta` to parameter-dependent mean shift (output_dim,)
+        dim: Output dimension
+
+    Key Methods:
+        get_mean_shift(theta):
+            Returns :math:`\mu_{global} + \mu_\\theta(\\theta)` (total mean shift excluding x)
+
+        get_mean_shift_magnitude(theta):
+            Returns :math:`\|\mu_\\theta(\\theta)\|^2` for shrinkage regularization
+
+        get_covariance_matrix(theta):
+            Returns :math:`\Sigma(\\theta) = L_{hybrid}(\\theta) L_{hybrid}(\\theta)^T`
+
+        log_prob(x_hat, x, theta):
+            Computes :math:`\log r_\psi(\hat{x}|x,\\theta)` (Gaussian log probability)
+
+        sample(key, x, theta):
+            Samples :math:`\hat{x} \sim r_\psi(\hat{x}|x,\\theta)`
+
+    Mathematical Notation:
+        - :math:`\\theta`: Parameters of interest (theta_dim,)
+        - :math:`x`: Original simulated observation (output_dim,)
+        - :math:`\hat{x}`: Corrected observation (output_dim,)
+        - :math:`\psi`: Correction model parameters {:math:`\mu_{global}`, weights of :math:`\mu_\\theta`,
+                       :math:`L_{global}`, weights of :math:`\sigma_{local}`}
+        - :math:`\phi`: Posterior flow parameters
+        - :math:`q_\phi(\\theta|\hat{x})`: Posterior distribution
+
+    Use Cases:
+        **RVNP-mu_hybrid (PRIMARY METHOD)**:
+            - Significant model misspecification with parameter-dependent errors
+            - Unknown bias structure (both constant and parameter-varying components)
+            - When RVNP-simple (diagonal covariance) is insufficient
+            - Example: Simulator missing friction term that varies with mass parameter
+
+        **Not Recommended When**:
+            - Well-specified simulator (use NPE instead)
+            - Minimal misspecification (use RVNP-simple instead)
+            - Very limited training data (risk of overfitting)
+
+    Example:
+        >>> key = jax.random.PRNGKey(0)
+        >>> theta_dim = 3
+        >>> output_dim = 10
+        >>> model = MuHybridCorrectionModel(key, theta_dim, output_dim, hidden_dim=128)
+        >>>
+        >>> # Get mean shift for specific theta
+        >>> theta = jnp.array([0.5, 1.0, -0.3])
+        >>> mean_shift = model.get_mean_shift(theta)
+        >>>
+        >>> # Compute shrinkage penalty
+        >>> magnitude = model.get_mean_shift_magnitude(theta)
+        >>>
+        >>> # Sample corrected observation
+        >>> x = jnp.array([1.0, 2.0, ...])  # Original observation
+        >>> x_hat = model.sample(key, x, theta)
+
+    Notes:
+        - Cholesky decomposition ensures positive-definite covariance
+        - Softplus activation on diagonal entries guarantees positivity
+        - Global mean shift captures simulator bias (e.g., wrong physical constant)
+        - Neural mean shift captures parameter-specific errors
+        - Hybrid covariance balances expressiveness and sample efficiency
+        - Training uses SimplifiedPosteriorLoss with shrinkage prior
+
+    See Also:
+        - SimpleCorrectionModel: Simpler baseline with fixed diagonal covariance
+        - HybridCorrectionModel: Neural covariance only (deprecated, no mean shift)
+        - FullNeuralCorrectionModel: Fully neural (experimental, may overfit)
     """
     # Global Cholesky factor (lower triangular) - inherited from hybrid
     L_global_raw: Array              # (dim, dim) - raw parameters for global Cholesky factor
@@ -950,6 +1064,77 @@ class MuHybridCorrectionModel(eqx.Module):
         """Compute combined mean shift μ_global + μ_θ(θ)."""
         mu_theta = self.mean_shift_net(theta)
         return self.mu_global + mu_theta
+
+    def get_mean_shift_magnitude(self, theta: Array) -> Array:
+        """Compute squared magnitude of neural mean shift for shrinkage prior.
+
+        Returns :math:`\|\mu_\\theta(\\theta)\|^2` where :math:`\mu_\\theta` is the neural network
+        component of the mean shift. This quantity is used in the shrinkage regularization term
+        of the RVNP loss function.
+
+        Mathematical Formulation:
+            The shrinkage loss term is:
+
+            .. math::
+
+                L_{shrinkage} = \lambda_{shrinkage} \cdot E_\\theta[\|\mu_\\theta(\\theta)\|^2]
+
+            where :math:`\lambda_{shrinkage}` is specified in config.model.lambda_shrinkage.
+
+        Regularization Purpose:
+            The shrinkage prior encourages the neural mean shift :math:`\mu_\\theta(\\theta)` to
+            remain close to zero when model misspecification is minimal. This prevents overfitting
+            and ensures the correction model only learns meaningful parameter-dependent biases.
+
+        Key Properties:
+            - **Only the neural component** :math:`\mu_\\theta(\\theta)` is penalized
+            - **Global bias NOT penalized**: :math:`\mu_{global}` can learn persistent systematic errors
+            - **Parameter-dependent**: Penalty varies with :math:`\\theta`, allowing selective correction
+            - **Encourages sparsity**: Small :math:`\lambda_{shrinkage}` → more correction allowed
+                                     Large :math:`\lambda_{shrinkage}` → forces correction toward identity
+
+        Args:
+            theta: Parameter vector, shape (theta_dim,) for single sample
+                   or (batch_size, theta_dim) for batch
+
+        Returns:
+            Squared L2 norm:
+                - Scalar value if theta is 1D (single sample)
+                - Array of shape (batch_size,) if theta is 2D (batch)
+
+        Implementation:
+            For single theta:
+                :math:`\|\mu_\\theta(\\theta)\|^2 = \sum_{i=1}^{d} \mu_{\\theta,i}(\\theta)^2`
+
+            For batch of thetas:
+                :math:`[\|\mu_\\theta(\\theta_1)\|^2, \ldots, \|\mu_\\theta(\\theta_B)\|^2]`
+
+        Example:
+            >>> model = MuHybridCorrectionModel(key, theta_dim=3, output_dim=10)
+            >>> theta = jnp.array([0.5, 1.0, -0.3])
+            >>> magnitude = model.get_mean_shift_magnitude(theta)
+            >>> # Use in loss: loss += lambda_shrinkage * magnitude
+
+        Notes:
+            - Called during SimplifiedPosteriorLoss computation (losses.py:576-613)
+            - Computed via vmap over batch in training loop
+            - Gradient flows through to mean_shift_net parameters
+            - Does NOT include the identity component :math:`x` or global bias :math:`\mu_{global}`
+            - Typical values: magnitude ∈ [0.001, 10.0] depending on misspecification severity
+
+        See Also:
+            - SimplifiedPosteriorLoss: Uses this method for shrinkage regularization
+            - get_mean_shift(): Returns full mean shift including global bias
+            - HybridCorrectionModel: No neural mean shift, so no shrinkage on mean
+        """
+        mu_theta = self.mean_shift_net(theta)
+
+        if mu_theta.ndim == 1:
+            # Single sample
+            return jnp.sum(mu_theta**2)
+        else:
+            # Batch
+            return jnp.sum(mu_theta**2, axis=-1)
     
     def __call__(self, x: Array, theta: Array) -> tuple[Array, Array]:
         """

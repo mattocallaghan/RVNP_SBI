@@ -20,6 +20,7 @@ def get_config():
     config.data.num_iid=1
     config.data.inference_simulations = int(config.data.num_tests*config.data.num_iid)      # For custom datasets (if applicable).
     config.model.name = 'npe'  # Use standard NPE model
+    config.model.correction_type = 'none'  # NPE baseline - no correction
     config.training.use_initialization=False  # NPE uses simple training, no initialization needed
     config.training.init_epochs=0  # No initialization for NPE
     config.training.warmup_epochs=0  # No warmup for NPE

@@ -142,6 +142,32 @@ def get_optimizer(config):
 
 
 class Task(ABC):
+    """Abstract base class for simulation-based inference tasks.
+
+    Defines the interface for SBI tasks including prior sampling, simulation,
+    observation generation, and dataset creation. Each task implements a specific
+    simulator and defines how to generate training/inference data.
+
+    Subclasses must implement:
+        - sample_prior(): Draw parameters from prior p(θ)
+        - simulate(): Run simulator to generate x ~ p(x|θ)
+        - generate_observation(): Create observed data x_obs for inference
+
+    Attributes:
+        name: Task name (automatically set to class name)
+        scales: Dictionary of normalization statistics (mean, std) if scaled
+
+    Example:
+        >>> class MyTask(Task):
+        ...     def sample_prior(self, key, n):
+        ...         return jax.random.uniform(key, (n, 3))
+        ...     def simulate(self, key, theta):
+        ...         return my_simulator(theta)
+        ...     def generate_observation(self, key, misspecified=True):
+        ...         theta_true = jnp.array([0.5, 1.0, -0.3])
+        ...         x_obs = my_simulator(theta_true)
+        ...         return theta_true, x_obs
+    """
     @property
     def name(self):
         return type(self).__name__
@@ -216,9 +242,40 @@ class Task(ABC):
 
 
 class CS(Task):
-    """
-    Directly from robust neural posterior estimation: https://github.com/danielward27/rnpe/blob/main/rnpe/tasks.py
-    
+    """Compressed Sensing task for spatial cell distribution inference.
+
+    Simulates spatial distribution of cancer cells and compresses observations via
+    random projection. The simulator models cell locations in 2D space with dynamics
+    that may be misspecified to test robustness of inference methods.
+
+    Task Details:
+        - **Parameter dimension**: 3 (θ₁, θ₂, θ₃ control cell distribution)
+        - **Observation dimension**: 4 (summary statistics)
+        - **Misspecification**: Simulator uses incorrect spatial dynamics
+        - **Prior**: Uniform distribution over parameter space
+        - **Use case**: Testing RVNP on structured spatial data
+
+    Mathematical Model:
+        The true data generating process differs from the simulator, creating
+        model misspecification that standard NPE cannot handle but RVNP corrects for.
+
+    Attributes:
+        name: "CS" (compressed sensing)
+        scales: Normalization statistics if dataset is scaled
+
+    Methods:
+        sample_prior(key, n): Sample n parameters from uniform prior
+        simulate(key, theta): Generate observations for given parameters
+        generate_observation(key, misspecified): Create observed data x_obs
+
+    Example:
+        >>> task = CS()
+        >>> key = jax.random.PRNGKey(0)
+        >>> theta = task.sample_prior(key, n=1000)  # (1000, 3)
+        >>> x = task.simulate(key, theta)  # (1000, 4)
+
+    References:
+        Adapted from: https://github.com/danielward27/rnpe/blob/main/rnpe/tasks.py
     """
     def __init__(self):
         self.theta_names = [r"$\lambda_c$", r"$\lambda_p$", r"$\lambda_d$"]
@@ -387,8 +444,55 @@ def remove_nans_and_warn(x):
 
 
 class SIR(Task):
-    """Prior is uniform [0, 0.5] with constraint such that beta > gamma. Note
-    this example requires julia, and may take a minute or two to compile."""
+    """Susceptible-Infected-Recovered epidemiological model task.
+
+    Simulates disease spread dynamics using stochastic differential equations (SDEs)
+    implemented in Julia. The simulator may use simplified transmission dynamics
+    (misspecified model) to test robustness of inference methods.
+
+    Task Details:
+        - **Parameter dimension**: 2 (β = infection rate, γ = recovery rate)
+        - **Observation dimension**: 10 (time series of S, I, R compartments)
+        - **Misspecification**: Simplified transmission model (multiplier on β)
+        - **Prior**: Uniform [0, 0.5]² with constraint β > γ
+        - **Use case**: Testing RVNP on dynamical systems with temporal data
+
+    Mathematical Model:
+        Standard SIR dynamics:
+            dS/dt = -β·S·I/N
+            dI/dt = β·S·I/N - γ·I
+            dR/dt = γ·I
+
+        Misspecification is introduced via scaling β by misspecify_multiplier,
+        creating systematic bias in the training simulator.
+
+    Requirements:
+        - Julia installation (1.6+)
+        - Julia packages: LinearAlgebra, StochasticDiffEq, NPZ, ArgParse
+        - First run may take 1-2 minutes for Julia JIT compilation
+
+    Attributes:
+        name: "SIR" (Susceptible-Infected-Recovered)
+        julia_env_path: Path to Julia environment
+        misspecify_multiplier: Scaling factor for β (creates misspecification)
+        scales: Normalization statistics if dataset is scaled
+
+    Methods:
+        sample_prior(key, n): Sample n parameters from constrained uniform prior
+        simulate(key, theta): Run SDE simulation via Julia
+        generate_observation(key, misspecified): Create observed epidemic data
+
+    Example:
+        >>> task = SIR(julia_env_path=".", misspecify_multiplier=0.95)
+        >>> key = jax.random.PRNGKey(0)
+        >>> theta = task.sample_prior(key, n=1000)  # (1000, 2)
+        >>> x = task.simulate(key, theta)  # (1000, 10)
+
+    Notes:
+        - Constraint β > γ ensures epidemic can spread (R₀ = β/γ > 1)
+        - Time series summarized to fixed-length observations
+        - Julia backend provides fast SDE integration
+    """
 
     def __init__(self, julia_env_path=".", misspecify_multiplier=0.95):
         self.julia_env_path = julia_env_path

@@ -21,9 +21,10 @@ from flowjax.bijections import RationalQuadraticSpline
 import paramax
 from models.embeddings import StatisticEmbedding,StatisticEmbedding_pendulum,StatisticEmbedding_spectra,StatisticDecoder,Discriminator,ReconstructionDecoder,ReconstructionDecoderSimple
 from models.priors import get_prior_from_config
+from model_utils import get_ranpt_model_breakdown, print_parameter_breakdown, save_parameter_breakdown, count_parameters
 
 
-            
+
 # Constants
 _FLOWS = {}
 
@@ -360,7 +361,53 @@ class Rational_Quadratic_Spline_w_posterior(Normalizing_Flow):
         return key
     
     def train_staged(self, key, train_data, inference_data):
-        """Train the model with 5-stage approach."""
+        """Train RVNP model using multi-stage approach.
+
+        Implements the RVNP training algorithm across multiple stages. Each stage focuses
+        on different model components to ensure stable and effective learning.
+
+        Training Stages:
+            Stage 1: Embedding networks (if applicable) - Train feature extraction networks
+                    for high-dimensional observations (e.g., spectral data).
+
+            Stage 2: Simulator flow p(x|θ) - Train the simulator emulator using maximum
+                    likelihood on simulated data. This flow is trained once and reused.
+
+            Stage 3: Posterior initialization p(θ|x_obs) - Initialize the posterior flow
+                    using standard maximum likelihood (if enabled).
+
+            Stage 4: Joint training - Simultaneously train both the posterior flow q_φ(θ|x̂)
+                    and correction model r_ψ(x̂|x,θ) using the variational objective.
+
+            Stage 6: Final posterior tuning - Fine-tune the posterior flow with a fixed
+                    correction model to improve calibration (if enabled).
+
+        Args:
+            key: JAX random key for reproducibility
+            train_data: Training dataset dictionary containing:
+                - 'theta': Parameter samples (num_samples, theta_dim)
+                - 'x': Corresponding observations (num_samples, obs_dim)
+            inference_data: Inference dataset dictionary containing:
+                - 'x_obs': Observed data for posterior inference
+
+        Returns:
+            Updated JAX random key
+
+        Notes:
+            - Stage numbering follows the paper convention (no Stage 5 for historical reasons)
+            - Each stage can be enabled/disabled via config flags:
+                * config.model.train_embeddings (Stage 1)
+                * config.model.train_simulator (Stage 2)
+                * config.model.train_posterior_init (Stage 3)
+                * config.model.train_final_posterior (Stage 6)
+            - The simulator flow is trained only once but reused by all other components
+            - Config flags control training epochs: warmup_epochs, final_epochs, final_posterior_epochs
+
+        Example:
+            >>> key = jax.random.PRNGKey(0)
+            >>> model = RANPT(config)
+            >>> key = model.train_staged(key, train_data, inference_data)
+        """
         print("Starting 4-stage training system...")
         # Stage 1: Embedding (handled separately in train() method)
         if getattr(self.config.model, 'train_embeddings', True):
@@ -397,7 +444,66 @@ class Rational_Quadratic_Spline_w_posterior(Normalizing_Flow):
     
     
     def train_single_stage(self, key, stage_name,flow,correction_model, train_data, inference_data, max_epochs=None, use_posterior_theta_sampling=False):
-        """Train a single stage with appropriate loss function."""
+        """Train a single stage with appropriate loss function.
+
+        Trains either the posterior flow, correction model, or both jointly depending on
+        the stage name and training flags.
+
+        Args:
+            key: JAX random key for stochastic operations
+            stage_name: Name of the training stage, one of:
+                - 'joint': Train both posterior and correction jointly
+                - 'final_posterior': Train posterior only with fixed correction
+            flow: Current posterior flow q_φ(θ|x) to be trained
+            correction_model: Current correction model r_ψ(x̂|x,θ) to be trained
+            train_data: Training dataset dictionary containing:
+                - 'theta': Parameter samples (num_samples, theta_dim)
+                - 'x': Corresponding observations (num_samples, obs_dim)
+            inference_data: Inference dataset dictionary containing:
+                - 'x_obs': Observed data for posterior inference
+            max_epochs: Maximum training epochs (overrides config.training.final_epochs).
+                       If None, uses config value. Default: None.
+            use_posterior_theta_sampling: Whether to sample θ from the posterior q_φ(θ|x)
+                                         or use fixed training θ. Default: False.
+                - If True: Sample θ ~ q_φ(θ|x) for each x (adapts to learned posterior)
+                - If False: Use fixed training θ values (standard amortized training)
+
+        Returns:
+            Tuple of (key, flow, correction_model):
+                - key: Updated JAX random key
+                - flow: Trained posterior flow
+                - correction_model: Trained correction model
+
+        Stage Descriptions:
+            joint:
+                Jointly trains both the posterior flow q_φ(θ|x̂) and correction model
+                r_ψ(x̂|x,θ) using the SimplifiedPosteriorLoss. This stage combines the
+                posterior likelihood, KL divergence between correction and simulator, and
+                shrinkage regularization.
+
+            final_posterior:
+                Fine-tunes only the posterior flow q_φ(θ|x̂) while keeping the correction
+                model fixed. Uses increased consistency weight (lambda_consistency_final)
+                to improve calibration. This helps the posterior better match the corrected
+                observations.
+
+        Notes:
+            - Both stages use SimplifiedPosteriorLoss but with different training flags
+            - Joint stage: train_correction_only=False, train_posterior_only=False
+            - Final posterior: train_correction_only=False, train_posterior_only=True
+            - Training epochs controlled by config.training.final_epochs (joint) or
+              config.training.final_posterior_epochs (final_posterior)
+            - Early stopping patience controlled by config.training.max_patience
+
+        Raises:
+            ValueError: If stage_name is not one of {'joint', 'final_posterior'}
+
+        Example:
+            >>> key = jax.random.PRNGKey(0)
+            >>> key, flow, corr = model.train_single_stage(
+            ...     key, 'joint', flow, correction_model, train_data, inference_data
+            ... )
+        """
         max_epochs = getattr(self.config.training, 'final_epochs', self.config.training.n_iters)
         train_data_prepared = train_data
         eval_data_prepared = self.eval_data
@@ -1826,6 +1932,9 @@ class RANPT(Normalizing_Flow):
             # Save RANPT model
             eqx.tree_serialise_leaves(self.file_name, self.flow)
             print(f"RANPT model saved to {self.file_name}")
+
+            # Log parameter counts
+            self._log_parameter_counts()
         else:
             # Load trained RANPT model
             try:
@@ -1834,6 +1943,9 @@ class RANPT(Normalizing_Flow):
                     self.embedding = eqx.tree_deserialise_leaves(self.file_name_embedding, self.embedding)
                 self.correction_model = eqx.tree_deserialise_leaves(self.file_name_correction, self.correction_model)
                 print(f"Loaded RANPT model from {self.file_name}")
+
+                # Log parameter counts for loaded model
+                self._log_parameter_counts()
             except FileNotFoundError:
                 print(f"RANPT model not found: {self.file_name}. Training new model...")
                 self.key = self.train_ranpt_posterior(subkey, train_data, inference_data)
@@ -1986,8 +2098,25 @@ class RANPT(Normalizing_Flow):
         flow = eqx.combine(best_params, static_flow)
         return key, flow
 
+    def _log_parameter_counts(self):
+        """Log parameter counts for all model components."""
+        print("\n" + "="*80)
+        print("MODEL PARAMETER BREAKDOWN")
+        print("="*80)
 
-    
+        # Get comprehensive breakdown
+        breakdown = get_ranpt_model_breakdown(self)
+
+        # Print it
+        print_parameter_breakdown(breakdown)
+
+        # Save to file in workspace
+        if hasattr(self, 'workspace_path'):
+            param_file = os.path.join(self.workspace_path, 'parameter_breakdown.json')
+            save_parameter_breakdown(breakdown, param_file)
+
+        print("="*80)
+        print()
 
 
 def log_correction_model_diagnostics(correction_model, stage_name: str, eval_data=None):

@@ -10,7 +10,48 @@ from typing import Tuple, Optional
 
 
 def get_dataset(config, evaluation=False,load_data=True,return_summary=False):
-    """Load a dataset based on config settings."""
+    """Load and preprocess training dataset for RVNP training.
+
+    Loads the dataset specified in config, performs validation splitting, and batches
+    the data for efficient training. Handles normalization statistics if requested.
+
+    Args:
+        config: Configuration object containing dataset and training parameters.
+               Required attributes: training.batch_size, eval.batch_size, data.dataset,
+               data.num_simulations
+        evaluation: If True, uses eval batch size and single epoch. If False, uses
+                   training batch size. Default: False
+        load_data: If True, loads actual data from disk. If False, only returns
+                  statistics (used for memory efficiency). Default: True
+        return_summary: If True, additionally returns (data_mean, data_std) for
+                       normalization. Default: False
+
+    Returns:
+        If return_summary=False:
+            tuple: (train_ds, eval_ds)
+                - train_ds: Batched training dataset
+                - eval_ds: Batched validation dataset
+
+        If return_summary=True:
+            tuple: (train_ds, eval_ds, data_mean, data_std)
+                - train_ds: Batched training dataset
+                - eval_ds: Batched validation dataset
+                - data_mean: Mean for normalization (array)
+                - data_std: Standard deviation for normalization (array)
+
+    Raises:
+        ValueError: If batch_size is not divisible by number of devices
+
+    Notes:
+        - Automatically handles multi-device setups (sharding across GPUs/TPUs)
+        - Applies preprocessing and batching via preprocess_and_batch()
+        - Uses random seed 0 for reproducible train/val split
+        - Loads from disk if data exists, otherwise generates via load_custom_dataset()
+
+    Example:
+        >>> train_ds, eval_ds = get_dataset(config)
+        >>> train_ds, eval_ds, mean, std = get_dataset(config, return_summary=True)
+    """
     batch_size = config.training.batch_size if not evaluation else config.eval.batch_size
     if batch_size % jax.device_count() != 0:
         raise ValueError(f'Batch size ({batch_size}) must be divisible by the number of devices ({jax.device_count()})')
@@ -37,7 +78,34 @@ def get_dataset(config, evaluation=False,load_data=True,return_summary=False):
 
 
 def get_inference_dataset(config, evaluation=False):
-    """Load a dataset based on config settings."""
+    """Load inference dataset containing observed data for posterior inference.
+
+    Loads the dataset used for computing posteriors on observed data x_obs. This is
+    separate from the training dataset and represents the real observations for which
+    we want to infer parameters.
+
+    Args:
+        config: Configuration object containing inference dataset parameters.
+               Required attributes: training.batch_size, eval.batch_size,
+               data.inference_dataset
+        evaluation: If True, uses eval batch size. If False, uses training batch size.
+                   Default: False
+
+    Returns:
+        tuple: (train_ds, eval_ds)
+            - train_ds: Batched inference dataset (typically single observation)
+            - eval_ds: Batched inference dataset (for validation)
+
+    Notes:
+        - Used during evaluation/inference phase, not training
+        - Dataset typically contains real observed data x_obs
+        - Returns normalized data if training data was normalized
+        - For single observation inference, batch may contain just 1 sample
+
+    Example:
+        >>> inference_ds = get_inference_dataset(config)
+        >>> # Use for computing posteriors on observed data
+    """
     batch_size = config.training.batch_size if not evaluation else config.eval.batch_size
     num_simulations=config.data.inference_simulations
     if batch_size % jax.device_count() != 0:

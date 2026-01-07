@@ -276,7 +276,113 @@ class SimplifiedPosteriorLoss:
         train_correction_only: bool = False,
         train_posterior_only: bool = False,
     ) -> Float[Array, ""]:
-        
+        """Compute RVNP variational loss with correction model.
+
+        Implements the robust variational objective for joint training of the posterior
+        flow and correction model. The loss combines posterior likelihood maximization,
+        distributional alignment via KL divergence, and shrinkage regularization.
+
+        Mathematical Formulation:
+            The loss implements:
+
+            .. math::
+
+                L(\phi,\psi) = -E_\\theta E_{x \sim p_{sim}(x|\\theta)} E_{\hat{x} \sim r_\psi(\hat{x}|x,\\theta)} [\log q_\phi(\\theta|\hat{x})]
+                             + \lambda_{KL} \cdot KL(r_\psi(\hat{x}|x,\\theta) \| p_{sim}(x|\\theta))
+                             + \lambda_{shrinkage} \cdot (\|\mu_\\theta(\\theta)\|^2 + \|diag(\Sigma_\psi)\|^2)
+
+            where:
+                - :math:`q_\phi(\\theta|\hat{x})`: Posterior flow (amortized inference)
+                - :math:`r_\psi(\hat{x}|x,\\theta)`: Correction model :math:`N(\hat{x}; \mu_\psi(x,\\theta), \Sigma_\psi(\\theta))`
+                - :math:`p_{sim}(x|\\theta)`: Simulator flow (trained separately)
+                - :math:`\\theta`: Parameters of interest
+                - :math:`x`: Simulated observation
+                - :math:`\hat{x}`: Corrected observation
+
+        Args:
+            params_flow: Trainable parameters of posterior flow :math:`q_\phi(\\theta|\hat{x})`
+            static_flow: Static (non-trainable) parameters of posterior flow
+            params_embedding: Trainable parameters of embedding network :math:`f_\omega(x)`
+                             (used for high-dimensional observations)
+            static_embedding: Static parameters of embedding network
+            params_correction: Trainable parameters of correction model :math:`r_\psi(\hat{x}|x,\\theta)`
+            static_correction: Static parameters of correction model
+            simulator_flow: Pre-trained simulator flow :math:`p_{sim}(x|\\theta)` (complete model,
+                           not split into params/static)
+            x_sim: Simulated observations from :math:`p_{sim}(x|\\theta)`, shape (batch_size, obs_dim)
+            x_obs: Observed data for inference, shape (n_obs, obs_dim)
+            theta: Parameters :math:`\\theta`, shape (batch_size, theta_dim)
+            key: JAX random key for stochastic sampling
+            embedding_stats: Optional dictionary with embedding statistics:
+                - 'mean': Normalization mean
+                - 'std': Normalization standard deviation
+            train_correction_only: If True, only update correction model parameters.
+                                  Gradients for posterior and embedding are zeroed.
+            train_posterior_only: If True, only update posterior parameters.
+                                 Gradients for correction model are zeroed.
+
+        Returns:
+            Scalar loss value (negative ELBO + regularization terms)
+
+        Loss Components:
+            1. **Posterior NLL**: :math:`-\log q_\phi(\\theta|\hat{x})`
+                - Encourages posterior to assign high probability to true :math:`\\theta`
+                  given corrected observations :math:`\hat{x} \sim r_\psi(\hat{x}|x,\\theta)`
+                - Averaged over :math:`\\theta`, :math:`x \sim p_{sim}(x|\\theta)`, and :math:`\hat{x} \sim r_\psi(\hat{x}|x,\\theta)`
+
+            2. **KL Divergence**: :math:`KL(r_\psi(\hat{x}|x,\\theta) \| p_{sim}(x|\\theta))`
+                - Prevents correction model from deviating too far from simulator
+                - Ensures corrected distribution remains plausible under simulator
+                - Weighted by :math:`\lambda_{KL}` (config.model.lambda_kl)
+
+            3. **Shrinkage Prior**: :math:`\|\mu_\\theta(\\theta)\|^2 + \|diag(\Sigma_\psi)\|^2`
+                - Regularizes correction toward identity (no correction)
+                - Penalizes large mean shifts and covariance corrections
+                - Weighted by :math:`\lambda_{shrinkage}` (config.model.lambda_shrinkage)
+                - Only applies to mu_hybrid correction models
+
+        Implementation Details:
+            **Posterior Term**:
+                - If use_posterior_theta_sampling=True: Sample :math:`\\theta \sim q_\phi(\\theta|x_{obs})`
+                  for each :math:`x_{obs}` and compute :math:`-\log q_\phi(\\theta|\hat{x})`
+                - If use_posterior_theta_sampling=False: Use fixed training :math:`\\theta` values
+
+            **KL Term**:
+                - For each :math:`\\theta`, sample :math:`K` observations :math:`x \sim p_{sim}(x|\\theta)`
+                - For each :math:`x`, compute :math:`KL(r_\psi(\cdot|x,\\theta) \| p_{sim}(\cdot|\\theta))`
+                - Average over all samples
+
+            **Shrinkage Term**:
+                - For MuHybridCorrectionModel: :math:`\|\mu_\\theta(\\theta)\|^2` via get_mean_shift_magnitude()
+                - Diagonal penalty: :math:`\|diag(\Sigma_\psi)\|^2` for all correction models
+                - Encourages minimal correction when misspecification is small
+
+        Training Modes:
+            - **Joint training** (train_correction_only=False, train_posterior_only=False):
+              Update both posterior and correction model. Used in Stage 4.
+
+            - **Correction only** (train_correction_only=True):
+              Update only correction model, freeze posterior. Used in Stage 4 warmup.
+
+            - **Posterior only** (train_posterior_only=True):
+              Update only posterior, freeze correction. Used in Stage 6 final tuning.
+
+        Notes:
+            - Posterior theta sampling adapts training to the current posterior distribution
+            - KL divergence computed analytically for Gaussian correction models
+            - Shrinkage prior only applies to models with neural mean shifts (mu_hybrid)
+            - Loss is JIT-compiled via @eqx.filter_jit for performance
+
+        Example:
+            >>> loss_fn = SimplifiedPosteriorLoss(lambda_kl=1.0, lambda_shrinkage=0.1)
+            >>> loss = loss_fn(
+            ...     params_flow, static_flow,
+            ...     params_embedding, static_embedding,
+            ...     params_correction, static_correction,
+            ...     simulator_flow, x_sim, x_obs, theta, key
+            ... )
+        """
+
         ###########
         ## pull in the parameters and static parameters
         # Normalizing flow (posterior)
@@ -576,7 +682,7 @@ class SimplifiedPosteriorLoss:
         elif isinstance(correction_model, (DiagonalNeuralCorrectionModel, HybridCorrectionModel, MuHybridCorrectionModel, FullNeuralCorrectionModel)):
             # For neural correction models, apply same diagonal shrinkage as SimpleCorrectionModel
             # plus network parameter regularization
-            
+
             # Get diagonal elements using the same approach as SimpleCorrectionModel
             if isinstance(correction_model, DiagonalNeuralCorrectionModel):
                 # DiagonalNeuralCorrectionModel doesn't have get_covariance_matrix, skip diagonal penalty
@@ -586,23 +692,31 @@ class SimplifiedPosteriorLoss:
                 # Use vmap to compute covariance matrices for all theta values in the batch
                 get_covariance_batch = jax.vmap(correction_model.get_covariance_matrix)
                 covariance_matrices = get_covariance_batch(theta_sim)  # (batch_size, dim, dim)
-                
+
                 # Extract diagonal elements across all samples
                 diagonal_elements = jnp.diagonal(covariance_matrices, axis1=1, axis2=2)  # (batch_size, dim)
-                
+
                 # Apply same diagonal penalty as SimpleCorrectionModel (vectorized across batch)
                 diagonal_penalty_batch=(jnp.log(2.0)-jnp.log(jnp.pi)- jnp.log(0.1)- jnp.log1p((((jax.nn.softplus(diagonal_elements) + 1e-6 - 0) / 0.1)) ** 2))
                 diagonal_penalty_batch=-diagonal_penalty_batch
-                
+
                 # Weight each diagonal component by the absolute value of empirical bias
                 if self.empirical_bias is not None:
                     bias_weights = 1.0/jnp.abs(self.empirical_bias)
                     diagonal_penalty_batch = diagonal_penalty_batch * bias_weights[None, :]  # Broadcast across batch
-                
+
                 diagonal_penalty = diagonal_penalty_batch.sum(-1).mean()  # Average across batch and sum across dimensions
 
-            
-            shrinkage_loss = diagonal_penalty 
+            # Add mean shift shrinkage for MuHybridCorrectionModel
+            mean_shift_penalty = 0.0
+            if isinstance(correction_model, MuHybridCorrectionModel):
+                # Shrinkage prior on neural mean shift: ||μ_θ(θ)||²
+                # Encourages mean shift network to output zero (no mean misspecification)
+                get_mean_magnitude_batch = jax.vmap(correction_model.get_mean_shift_magnitude)
+                mean_shift_magnitudes = get_mean_magnitude_batch(theta_sim)  # (batch_size,)
+                mean_shift_penalty = jnp.mean(mean_shift_magnitudes)
+
+            shrinkage_loss = diagonal_penalty + mean_shift_penalty 
             
         else:
             # For other correction models, use fallback
