@@ -38,7 +38,7 @@ Basic Usage
 Training a Single Experiment
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Train RVNP-mu_hybrid on the Compressed Sensing task with 100 observations::
+Train RVNP-NN on the Compressed Sensing task with 100 observations::
 
     python main_train_eval.py --config=configs/CS_task/ranpt_100_mu_hybrid.py --mode=train
 
@@ -98,12 +98,12 @@ The codebase supports four simulation-based inference tasks:
 Methods
 -------
 
-RVNP-mu_hybrid (Primary)
+RVNP-NN (Primary)
 ~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Neural mean and covariance correction::
 
-    correction_type = 'mu_hybrid'
+    correction_type = 'NN'
 
 Key features:
 
@@ -143,7 +143,7 @@ Configuration
 
 Experiments are configured via Python config files in ``configs/``.
 
-Example config structure for RVNP-mu_hybrid::
+Example config structure for RVNP-NN::
 
     def get_config():
         config = base_get_config()
@@ -155,7 +155,7 @@ Example config structure for RVNP-mu_hybrid::
 
         # Model
         config.model.name = 'nlpe_rqs_posterior'  # RVNP
-        config.model.correction_type = 'mu_hybrid'
+        config.model.correction_type = 'NN'
         config.model.flow_dimension = 3  # Parameter dimension
         config.model.cond_dim = 4  # Observation dimension
 

@@ -109,22 +109,22 @@ def get_config():
     # Theta Clipping Configuration
     config.model.clip_theta_to_bounds=True  # Clip sampled theta to training data bounds for stability
     
-    # Staged training parameters - 5-stage approach with alternating execution
+    # Staged training parameters - multi-stage approach with alternating execution
     # Each stage runs for n_alternates iterations before moving to next stage
     config.model.n_alternates = 2  # Number of iterations per stage in alternating mode (reduced for testing)
     
-    # === 5-STAGE TRAINING CONFIGURATION ===
+    # === MULTI-STAGE TRAINING CONFIGURATION ===
     config.model.train_simulator=False       # Stage 2: Train simulator flow p(x_sim|θ)
     config.model.train_posterior_init=True       # Stage 3: Initialize posterior p_φ(θ|x_obs)
     config.model.train_correction_coarse=True    # Stage 4: Coarse correction training
     config.model.train_posterior_widen=True      # Stage 4.5: Widen posterior using corrected samples
-    config.model.train_joint_refinement=True     # Stage 5: Joint posterior + correction refinement
+    config.model.train_joint_refinement=True     # Joint posterior + correction refinement
     
     # === FINAL STAGE OPTIONS ===
     # Set to True for alternating correction/posterior updates, False for joint training
-    config.model.train_joint_alternating=False   # Stage 5: alternating vs joint mode
-    config.model.train_final_posterior=True      # Stage 6: Final posterior tuning with fixed correction model
-    config.model.load_saved_models_for_stage6=False  # Load saved models and run only Stage 6
+    config.model.train_joint_alternating=False   # Alternating vs joint mode
+    config.model.train_final_posterior=True      # Final posterior tuning with fixed correction model
+    config.model.load_saved_models_for_stage6=False  # Load saved models for final tuning
     
     # === ATTENTION MECHANISM OPTIONS ===
     config.model.use_uniform_attention=False      # True=uniform weights, False=simulator-based weights (default)

@@ -130,12 +130,12 @@ def get_config():
     config.model.train_posterior_init=True       # Stage 3: Initialize posterior p_φ(θ|x_obs)
     config.model.train_correction_coarse=True    # Stage 4: Coarse correction training
     config.model.train_posterior_widen=True      # Stage 4.5: Widen posterior using corrected samples
-    config.model.train_joint_refinement=True     # Stage 5: Joint posterior + correction refinement
+    config.model.train_joint_refinement=True     # Joint posterior + correction refinement
     
     # === FINAL STAGE OPTIONS ===
-    config.model.train_joint_alternating=False   # Stage 5: alternating vs joint mode
-    config.model.train_final_posterior=True      # Stage 6: Final posterior tuning with fixed correction model
-    config.model.load_saved_models_for_stage6=False  # Load saved models and run only Stage 6
+    config.model.train_joint_alternating=False   # Alternating vs joint mode
+    config.model.train_final_posterior=True      # Final posterior tuning with fixed correction model
+    config.model.load_saved_models_for_stage6=False  # Load saved models for final tuning
     
     # === INITIAL CORRECTION VARIANCE ===
     config.model.initial_correction_variance=0.1  # Positive value to avoid NaN in covariance matrix

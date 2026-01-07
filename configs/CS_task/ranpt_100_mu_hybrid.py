@@ -6,15 +6,15 @@ import ml_collections
 import jax.numpy as jnp
 
 """
-RANPT configuration for CS task with mu_hybrid correction
-Uses RANPT model with mu_hybrid correction (neural mean + neural covariance)
+RANPT configuration for CS task with NN correction
+Uses RANPT model with NN correction (neural mean + neural covariance)
 """
 
 def get_config():
     # Start with the base configuration.
     config = base_get_config()
     
-    config.training.workspace='output/ranpt_cs_task_100_mu_hybrid'
+    config.training.workspace='output/ranpt_cs_task_100_NN'
     config.data.num_simulations = int(100000/(1-config.training.validation_split))      # For custom datasets (if applicable).
     
     config.data.num_iid=1
@@ -42,7 +42,7 @@ def get_config():
     config.optim.grad_clip = 10.0
     config.training.max_patience=100         # Patience for early stopping
     config.training.stop_on_model_mismatch=True  # Stop if saved model has shape mismatch
-    config.model.correction_model_name="mu_hybrid"
+    config.model.correction_model_name="NN"
     config.augmentation_factor=100
     config.model.name = 'ranpt'  # Use RANPT model
     config.model.nn_depth_bnaf = 5
@@ -75,7 +75,7 @@ def get_config():
     config.sampling.lr_train_loss_model=1e-3
     
     # MAIN VARIATIONAL POSTERIOR CONFIGURATION 
-    config.model.correction_type='mu_hybrid'  # MU-HYBRID: neural mean + neural covariance
+    config.model.correction_type='NN'  # NN (Neural Network): neural mean + neural covariance
     config.model.lambda_variational=1.0  # variational loss weight
     config.model.K_obs_samples=30  # Increased for better sampling diversity
     config.model.lambda_entropy=0.0
@@ -102,20 +102,20 @@ def get_config():
     # Theta Clipping Configuration
     config.model.clip_theta_to_bounds=True  # Clip sampled theta to training data bounds for stability
     
-    # Staged training parameters - 5-stage approach with alternating execution
+    # Staged training parameters with alternating execution
     config.model.n_alternates = 2  # Number of iterations per stage in alternating mode
     
-    # === 5-STAGE TRAINING CONFIGURATION ===
+    # === MULTI-STAGE TRAINING CONFIGURATION ===
     config.model.train_simulator=False       # Stage 2: Train simulator flow p(x_sim|θ)
     config.model.train_posterior_init=True       # Stage 3: Initialize posterior p_φ(θ|x_obs)
     config.model.train_correction_coarse=True    # Stage 4: Coarse correction training
     config.model.train_posterior_widen=True      # Stage 4.5: Widen posterior using corrected samples
-    config.model.train_joint_refinement=True     # Stage 5: Joint posterior + correction refinement
-    
+    config.model.train_joint_refinement=True     # Joint posterior + correction refinement
+
     # === FINAL STAGE OPTIONS ===
-    config.model.train_joint_alternating=False   # Stage 5: alternating vs joint mode
-    config.model.train_final_posterior=True      # Stage 6: Final posterior tuning with fixed correction model
-    config.model.load_saved_models_for_stage6=False  # Load saved models and run only Stage 6
+    config.model.train_joint_alternating=False   # Alternating vs joint mode
+    config.model.train_final_posterior=True      # Final posterior tuning with fixed correction model
+    config.model.load_saved_models_for_stage6=False  # Load saved models for final tuning
     
     # === ATTENTION MECHANISM OPTIONS ===
     config.model.use_uniform_attention=False      # True=uniform weights, False=simulator-based weights (default)

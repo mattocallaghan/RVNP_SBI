@@ -33,7 +33,7 @@ class ExperimentConfig:
     """Configuration for a single experiment."""
     task: str
     method: str
-    correction_type: str  # 'simple', 'mu_hybrid', or 'none'
+    correction_type: str  # 'simple', 'NN', or 'none'
     nobs: int
     config_file: str
 
@@ -60,7 +60,7 @@ class IntegratedPipeline:
     # Methods to compare (user wants to focus on these)
     METHODS = [
         ('RVNP-simple', 'ranpt', 'simple'),
-        ('RVNP-mu_hybrid', 'ranpt', 'mu_hybrid'),
+        ('RVNP-NN', 'ranpt', 'NN'),
         ('NPE', 'npe', 'none'),
     ]
 
@@ -176,7 +176,7 @@ class IntegratedPipeline:
             elif model_name == 'ranpt':
                 # For RANPT, use 'hybrid' in filename even for mu_hybrid
                 # (wellspec configs were created before mu_hybrid naming)
-                correction_for_file = 'hybrid' if correction_type == 'mu_hybrid' else correction_type
+                correction_for_file = 'hybrid' if correction_type == 'NN' else correction_type
                 config_name = f"{task_lower}_task_tests{nobs}_{correction_for_file}_shrink00_wellspec.py"
             else:
                 return None
@@ -613,7 +613,7 @@ def main():
     parser.add_argument('--task', type=str, choices=['CS', 'SIR', 'Pendulum', 'Spectra'],
                        help='Filter by task')
     parser.add_argument('--method', type=str,
-                       choices=['RVNP-simple', 'RVNP-mu_hybrid', 'NPE'],
+                       choices=['RVNP-simple', 'RVNP-NN', 'NPE'],
                        help='Filter by method')
     parser.add_argument('--nobs', type=int, choices=[1, 10, 100, 1000, 10000],
                        help='Filter by number of observations')

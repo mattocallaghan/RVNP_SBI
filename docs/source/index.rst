@@ -17,7 +17,7 @@ Overview
 
 RVNP-SBI implements several simulation-based inference algorithms:
 
-- **RVNP-mu_hybrid** (Primary): Neural mean + neural covariance correction
+- **RVNP-NN** (Primary): Neural mean + neural covariance correction
 - **RVNP-simple**: Diagonal covariance correction
 - **NPE**: Neural posterior estimation baseline
 - **NNPE**: Noisy neural posterior estimation

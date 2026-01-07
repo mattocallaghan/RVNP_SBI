@@ -60,10 +60,10 @@ def verify_config(config_path: str) -> Dict:
 
         # Check correction_type matches filename
         filename = Path(config_path).name
-        if 'mu_hybrid' in filename:
-            if config.model.correction_type != 'mu_hybrid':
+        if 'NN' in filename:
+            if config.model.correction_type != 'NN':
                 results['errors'].append(
-                    f"Filename contains 'mu_hybrid' but correction_type='{config.model.correction_type}'"
+                    f"Filename contains 'NN' but correction_type='{config.model.correction_type}'"
                 )
                 results['status'] = 'ERROR'
         elif 'simple' in filename:
@@ -80,7 +80,7 @@ def verify_config(config_path: str) -> Dict:
 
         # Check model.name vs correction_type consistency
         if config.model.name == 'ranpt':
-            if config.model.correction_type not in ['simple', 'mu_hybrid', 'hybrid', 'diagonal_neural', 'neural']:
+            if config.model.correction_type not in ['simple', 'NN', 'hybrid', 'diagonal_neural', 'neural']:
                 results['errors'].append(
                     f"RANPT model has invalid correction_type: '{config.model.correction_type}'"
                 )
@@ -101,7 +101,7 @@ def verify_config(config_path: str) -> Dict:
         # Check for common issues
         if config.model.correction_type == 'hybrid':
             results['warnings'].append(
-                "Using 'hybrid' instead of 'mu_hybrid' - are you sure? 'hybrid' only has neural covariance, no neural mean"
+                "Using 'hybrid' instead of 'NN' - are you sure? 'hybrid' only has neural covariance, no neural mean"
             )
 
     except Exception as e:
@@ -119,7 +119,7 @@ def main():
 
     # Find all config files
     tasks = ['CS_task', 'SIR', 'Pendulum', 'Spectra']
-    methods = ['mu_hybrid', 'simple', 'npe']
+    methods = ['NN', 'simple', 'npe']
     nobs_values = [1, 10, 100, 1000, 10000]
 
     all_results = []

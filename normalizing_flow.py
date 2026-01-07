@@ -230,7 +230,7 @@ class Rational_Quadratic_Spline_w_posterior(Normalizing_Flow):
             self.correction_model = DiagonalNeuralCorrectionModel(key=subkey, theta_dim=self.flow_dimension, output_dim=correction_dim)
         elif correction_type == 'hybrid':
             self.correction_model = HybridCorrectionModel(key=subkey, theta_dim=self.flow_dimension, output_dim=correction_dim)
-        elif correction_type == 'mu_hybrid':
+        elif correction_type == 'NN':
             self.correction_model = MuHybridCorrectionModel(key=subkey, theta_dim=self.flow_dimension, output_dim=correction_dim)
         elif correction_type == 'global':
             self.correction_model = GlobalCorrectionModel(key=subkey, output_dim=correction_dim)
@@ -379,9 +379,6 @@ class Rational_Quadratic_Spline_w_posterior(Normalizing_Flow):
             Stage 4: Joint training - Simultaneously train both the posterior flow q_φ(θ|x̂)
                     and correction model r_ψ(x̂|x,θ) using the variational objective.
 
-            Stage 6: Final posterior tuning - Fine-tune the posterior flow with a fixed
-                    correction model to improve calibration (if enabled).
-
         Args:
             key: JAX random key for reproducibility
             train_data: Training dataset dictionary containing:
@@ -394,12 +391,10 @@ class Rational_Quadratic_Spline_w_posterior(Normalizing_Flow):
             Updated JAX random key
 
         Notes:
-            - Stage numbering follows the paper convention (no Stage 5 for historical reasons)
             - Each stage can be enabled/disabled via config flags:
                 * config.model.train_embeddings (Stage 1)
                 * config.model.train_simulator (Stage 2)
                 * config.model.train_posterior_init (Stage 3)
-                * config.model.train_final_posterior (Stage 6)
             - The simulator flow is trained only once but reused by all other components
             - Config flags control training epochs: warmup_epochs, final_epochs, final_posterior_epochs
 
@@ -430,16 +425,16 @@ class Rational_Quadratic_Spline_w_posterior(Normalizing_Flow):
                 key, subkey = jr.split(key)
                 key,self.flow=self.initialize_posterior_flow(key,self.flow,train_data)
         
-        # Stage 4: Final refinement if enabled
+        # Stage 4: Joint training
         print("Stage 4: Joint training")
         key, subkey = jr.split(key)
         key,self.flow,self.correction_model = self.train_single_stage(subkey, 'joint',self.flow,self.correction_model, train_data, inference_data,use_posterior_theta_sampling=True)
-        # Stage 6: Final posterior tuning with fixed correction model
+        # Final posterior tuning with fixed correction model (optional)
         if getattr(self.config.model, 'train_final_posterior', False):
-            print("Stage 6: Final posterior tuning with fixed correction model...")
+            print("Final posterior tuning with fixed correction model...")
             key, subkey = jr.split(key)
             key,self.flow,self.correction_model = self.train_single_stage(subkey, 'final_posterior',self.flow,self.correction_model, train_data, inference_data,use_posterior_theta_sampling=False)
-        print("4-stage training system completed.")
+        print("Training system completed.")
         return key
     
     
@@ -1863,7 +1858,7 @@ class RANPT(Normalizing_Flow):
             self.correction_model = DiagonalNeuralCorrectionModel(key=subkey, theta_dim=self.flow_dimension, output_dim=correction_dim)
         elif correction_type == 'hybrid':
             self.correction_model = HybridCorrectionModel(key=subkey, theta_dim=self.flow_dimension, output_dim=correction_dim)
-        elif correction_type == 'mu_hybrid':
+        elif correction_type == 'NN':
             self.correction_model = MuHybridCorrectionModel(key=subkey, theta_dim=self.flow_dimension, output_dim=correction_dim)
         elif correction_type == 'global':
             self.correction_model = GlobalCorrectionModel(key=subkey, output_dim=correction_dim)

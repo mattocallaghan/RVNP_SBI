@@ -5,15 +5,15 @@ import ml_collections
 import jax.numpy as jnp
 
 """
-RANPT configuration for Spectra task with mu_hybrid correction
-Uses RANPT model with mu_hybrid correction (neural mean + neural covariance)
+RANPT configuration for Spectra task with NN correction
+Uses RANPT model with NN correction (neural mean + neural covariance)
 """
 
 def get_config():
     # Start with the base configuration.
     config = base_get_config()
     
-    config.training.workspace='output/ranpt_spectra_task_1_mu_hybrid'
+    config.training.workspace='output/ranpt_spectra_task_1_NN'
     config.data.num_simulations = int(125711)      # For custom datasets (if applicable).
     
     config.data.num_iid=1
@@ -40,7 +40,7 @@ def get_config():
     config.optim.grad_clip = 10.0
     config.training.max_patience=100         # Patience for early stopping
     config.training.stop_on_model_mismatch=True  # Stop if saved model has shape mismatch
-    config.model.correction_model_name="mu_hybrid"
+    config.model.correction_model_name="NN"
     config.augmentation_factor=100
     config.model.name = 'ranpt'  # Use RANPT model
     config.model.nn_depth_bnaf = 5
@@ -75,7 +75,7 @@ def get_config():
     config.sampling.lr_train_loss_model=1e-3
     
     # MAIN VARIATIONAL POSTERIOR CONFIGURATION 
-    config.model.correction_type='mu_hybrid'  # MU-HYBRID: neural mean + neural covariance
+    config.model.correction_type='NN'  # NN (Neural Network): neural mean + neural covariance
     config.model.lambda_variational=1.0  # variational loss weight
     config.model.K_obs_samples=30  # Increased for better sampling diversity
     config.model.lambda_entropy=0.0

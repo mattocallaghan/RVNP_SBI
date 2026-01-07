@@ -13,7 +13,7 @@ Robust Variational Neural Posterior (RVNP) for Simulation-Based Inference under 
 - **Baseline**: Neural Posterior Estimation (NPE)
 - **Tasks**: CS, SIR, Pendulum, Spectra (4 tasks)
 - **Nobs**: 1, 10, 100, 1000, 10000 (5 settings)
-- **Methods**: RVNP-simple, RVNP-mu_hybrid, NPE (3 methods)
+- **Methods**: RVNP-simple, RVNP-NN, NPE (3 methods)
 
 ---
 
@@ -43,16 +43,16 @@ bash run_ablation_study.sh --plots-only
 
 ### Single Experiment
 ```bash
-python integrated_pipeline.py --task=SIR --method=RVNP-mu_hybrid --nobs=100
+python integrated_pipeline.py --task=SIR --method=RVNP-NN --nobs=100
 ```
 
 ---
 
 ## Methods
 
-### 1. RVNP-mu_hybrid ⭐ (Main Method)
+### 1. RVNP-NN ⭐ (Main Method)
 - **Type**: Neural mean + neural covariance correction
-- **Config**: `correction_type='mu_hybrid'`
+- **Config**: `correction_type='NN'`
 - **Mean**: μ = x + μ_global + μ_θ(θ) where μ_θ is neural network
 - **Shrinkage Prior**: L2 penalty on ||μ_θ(θ)||² (controlled by `lambda_shrinkage`)
 - **Implementation**: `models/correction_model.py` (MuHybridCorrectionModel)
@@ -68,7 +68,7 @@ python integrated_pipeline.py --task=SIR --method=RVNP-mu_hybrid --nobs=100
 
 **⚠️ DO NOT confuse**:
 - `correction_type='hybrid'` = Neural covariance ONLY (deprecated) ❌
-- `correction_type='mu_hybrid'` = Neural mean + covariance ✅
+- `correction_type='NN'` = Neural mean + covariance ✅
 
 ---
 
@@ -293,7 +293,7 @@ bash run_ablation_study.sh --status
 
 ### Main Experiments
 - **Tasks**: 4 (CS, SIR, Pendulum, Spectra)
-- **Methods**: 3 (RVNP-simple, RVNP-mu_hybrid, NPE)
+- **Methods**: 3 (RVNP-simple, RVNP-NN, NPE)
 - **Nobs**: 5 (1, 10, 100, 1000, 10000)
 - **Total**: ~60 experiments
 

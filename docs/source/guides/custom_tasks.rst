@@ -79,7 +79,7 @@ Create ``configs/MyTask/ranpt_100_mu_hybrid.py``::
 
         # Model architecture
         config.model.name = 'nlpe_rqs_posterior'
-        config.model.correction_type = 'mu_hybrid'
+        config.model.correction_type = 'NN'
         config.model.flow_dimension = 3  # theta dimension
         config.model.cond_dim = 10  # x dimension
 

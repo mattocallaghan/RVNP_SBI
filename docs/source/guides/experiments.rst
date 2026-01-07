@@ -9,7 +9,7 @@ Experimental Matrix
 The codebase is designed to run ~60 experiments organized as:
 
 - **Tasks**: 4 (CS, SIR, Pendulum, Spectra)
-- **Methods**: 3 (RVNP-simple, RVNP-mu_hybrid, NPE)
+- **Methods**: 3 (RVNP-simple, RVNP-NN, NPE)
 - **Nobs**: 5 (1, 10, 100, 1000, 10000)
 
 Main Experiments

@@ -13,7 +13,7 @@ def get_config():
     # Start with the base configuration.
     config = base_get_config()
     
-    config.training.workspace='output/ranpt_pendulum_task_100_mu_hybrid'
+    config.training.workspace='output/ranpt_pendulum_task_100_NN'
     config.data.num_simulations = int(100000/(1-config.training.validation_split))      # For custom datasets (if applicable).
     
     config.data.num_iid=1
@@ -75,7 +75,7 @@ def get_config():
     config.sampling.lr_train_loss_model=1e-3
     
     # MAIN VARIATIONAL POSTERIOR CONFIGURATION 
-    config.model.correction_type='mu_hybrid'  # 'hybrid', 'diagonal_neural', or 'neural'
+    config.model.correction_type='NN'  # 'hybrid', 'diagonal_neural', or 'neural'
     config.model.lambda_variational=1.0  # variational loss weight
     config.model.K_obs_samples=30  # Increased for better sampling diversity
     config.model.lambda_entropy=0.0

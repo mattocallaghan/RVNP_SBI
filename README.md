@@ -13,12 +13,12 @@ This repository implements Robust Variational Neural Posterior estimation from t
 
 This codebase implements several simulation-based inference algorithms for robust posterior estimation under model misspecification:
 
-- **RVNP-mu_hybrid** - Primary method: Neural mean + neural covariance correction
+- **RVNP-NN** - Primary method: Neural mean + neural covariance correction
 - **RVNP-simple** - Baseline: Fixed diagonal covariance correction
 - **NPE (Neural Posterior Estimation)** - Standard baseline (no correction)
 - **NNPE (Noisy Neural Posterior Estimation)** - Noisy posterior baseline from Ward et al
 
-**RVNP-mu_hybrid is the primary algorithm** of this repository, designed to handle significant model misspecification by learning both parameter-dependent mean shifts and adaptive covariance structures.
+**RVNP-NN is the primary algorithm** of this repository, designed to handle significant model misspecification by learning both parameter-dependent mean shifts and adaptive covariance structures.
 
 ## Table of Contents
 - [Citation](#citation)
@@ -166,7 +166,7 @@ def get_config():
     # === CORRECTION MODEL (RVNP Core Feature) ===
     config.model.correction_type = 'simple'                    # Correction model type:
                                                                 # 'simple' - Fixed diagonal covariance (RVNP-simple)
-                                                                # 'mu_hybrid' - Neural mean + covariance (RVNP-mu_hybrid, PRIMARY)
+                                                                # 'NN' - Neural mean + covariance (RVNP-NN, PRIMARY)
                                                                 # 'none' - No correction (NPE baseline)
     config.model.initial_correction_variance = -3              # Initial correction variance (log scale)
     

@@ -20,7 +20,7 @@ class PublicationPlotter:
     # Method display names and colors
     METHOD_STYLES = {
         'RVNP-simple': {'label': 'RVNP (diagonal cov)', 'color': '#2E86AB', 'marker': 'o', 'linestyle': '-'},
-        'RVNP-mu_hybrid': {'label': 'RVNP (neural mean+cov)', 'color': '#A23B72', 'marker': 's', 'linestyle': '-'},
+        'RVNP-NN': {'label': 'RVNP (neural mean+cov)', 'color': '#A23B72', 'marker': 's', 'linestyle': '-'},
         'NPE': {'label': 'NPE', 'color': '#6A994E', 'marker': 'D', 'linestyle': '--'},
     }
 
@@ -378,7 +378,7 @@ def main():
                        choices=['CS', 'SIR', 'Pendulum', 'Spectra', 'all'],
                        help='Task to plot (or "all" for all tasks)')
     parser.add_argument('--method', type=str,
-                       choices=['RVNP-simple', 'RVNP-mu_hybrid', 'NPE'],
+                       choices=['RVNP-simple', 'RVNP-NN', 'NPE'],
                        help='Plot method comparison across tasks')
     parser.add_argument('--save-dir', type=str, default='publication_plots',
                        help='Directory to save plots')

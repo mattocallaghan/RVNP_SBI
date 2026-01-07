@@ -276,7 +276,7 @@ def validate_config(config: Any) -> bool:
     # Additional validation checks (only run if fields exist)
     # Check correction type validity (must be one of the allowed types)
     try:
-        valid_corrections = ['simple', 'diagonal_neural', 'hybrid', 'neural', 'mu_hybrid', 'global', 'full_neural']
+        valid_corrections = ['simple', 'diagonal_neural', 'hybrid', 'neural', 'NN', 'global', 'full_neural']
         if config.model.correction_type not in valid_corrections:
             errors.append(
                 f"model.correction_type must be one of {valid_corrections}, "

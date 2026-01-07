@@ -7,7 +7,7 @@ import jax.numpy as jnp
 
 """
 ABLATION STUDY: Shrinkage Prior - None (Baseline)
-CS task with mu_hybrid correction, lambda_shrinkage=0.0
+CS task with NN correction, lambda_shrinkage=0.0
 Nobs=100, nn_block_dim=52
 """
 
@@ -43,7 +43,7 @@ def get_config():
     config.optim.grad_clip = 10.0
     config.training.max_patience=100
     config.training.stop_on_model_mismatch=True
-    config.model.correction_model_name="mu_hybrid"
+    config.model.correction_model_name="NN"
     config.augmentation_factor=100
     config.model.name = 'ranpt'
     config.model.nn_depth_bnaf = 5
@@ -76,7 +76,7 @@ def get_config():
     config.sampling.lr_train_loss_model=1e-3
 
     # MAIN VARIATIONAL POSTERIOR CONFIGURATION
-    config.model.correction_type='mu_hybrid'
+    config.model.correction_type='NN'
     config.model.lambda_variational=1.0
     config.model.K_obs_samples=30
     config.model.lambda_entropy=0.0

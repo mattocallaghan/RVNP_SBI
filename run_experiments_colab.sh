@@ -82,7 +82,7 @@ while [[ $# -gt 0 ]]; do
             echo ""
             echo "Pipeline Options:"
             echo "  --task=TASK          Filter by task (CS, SIR, Pendulum, Spectra)"
-            echo "  --method=METHOD      Filter by method (RVNP-simple, RVNP-mu_hybrid, NPE)"
+            echo "  --method=METHOD      Filter by method (RVNP-simple, RVNP-NN, NPE)"
             echo "  --nobs=N             Filter by Nobs (1, 10, 100, 1000, 10000)"
             echo "  --no-sir             Disable SIR evaluation"
             echo "  --skip-training      Skip training, only evaluate existing models"
@@ -95,7 +95,7 @@ while [[ $# -gt 0 ]]; do
             echo ""
             echo "Examples:"
             echo "  bash run_experiments_colab.sh"
-            echo "  bash run_experiments_colab.sh --task=CS --method=RVNP-mu_hybrid"
+            echo "  bash run_experiments_colab.sh --task=CS --method=RVNP-NN"
             echo "  bash run_experiments_colab.sh --status"
             echo "  bash run_experiments_colab.sh --plots-only"
             exit 0

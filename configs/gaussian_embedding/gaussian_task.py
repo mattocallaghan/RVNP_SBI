@@ -112,17 +112,17 @@ def get_config():
     config.model.use_iw_forward_kl=False  # Use importance-weighted Forward KL + Reverse KL (set to True to enable)
     config.model.lambda_kl=1.0  # Weight for KL term
     
-    # === 5-STAGE TRAINING CONFIGURATION ===
+    # === MULTI-STAGE TRAINING CONFIGURATION ===
     config.model.train_posterior_init=True       # Stage 3: Initialize posterior p_φ(θ|x_obs)
     config.model.train_correction_coarse=True    # Stage 4: Coarse correction training
     config.model.train_posterior_widen=True      # Stage 4.5: Widen posterior using corrected samples
-    config.model.train_joint_refinement=True     # Stage 5: Joint posterior + correction refinement
+    config.model.train_joint_refinement=True     # Joint posterior + correction refinement
     
     # === FINAL STAGE OPTIONS ===
     # Set to True for alternating correction/posterior updates, False for joint training
-    config.model.train_joint_alternating=False   # Stage 5: alternating vs joint mode
-    config.model.train_final_posterior=True      # Stage 6: Final posterior tuning with fixed correction model
-    config.model.load_saved_models_for_stage6=False  # Load saved models and run only Stage 6
+    config.model.train_joint_alternating=False   # Alternating vs joint mode
+    config.model.train_final_posterior=True      # Final posterior tuning with fixed correction model
+    config.model.load_saved_models_for_stage6=False  # Load saved models for final tuning
     
     # === ATTENTION MECHANISM OPTIONS ===
     config.model.use_uniform_attention=False      # True=uniform weights, False=simulator-based weights (default)
@@ -155,7 +155,7 @@ def get_config():
     config.training.validation_frequency=3
     config.training.logging_frequency=5
 
-    # Staged training parameters - 5-stage approach with alternating execution
+    # Staged training parameters - multi-stage approach with alternating execution
     config.model.n_alternates = 2  # Number of iterations per stage in alternating mode (reduced for testing)
     
     return config

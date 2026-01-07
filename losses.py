@@ -289,7 +289,7 @@ class SimplifiedPosteriorLoss:
 
                 L(\phi,\psi) = -E_\\theta E_{x \sim p_{sim}(x|\\theta)} E_{\hat{x} \sim r_\psi(\hat{x}|x,\\theta)} [\log q_\phi(\\theta|\hat{x})]
                              + \lambda_{KL} \cdot KL(r_\psi(\hat{x}|x,\\theta) \| p_{sim}(x|\\theta))
-                             + \lambda_{shrinkage} \cdot (\|\mu_\\theta(\\theta)\|^2 + \|diag(\Sigma_\psi)\|^2)
+                             + \lambda_{shrinkage} \cdot \|\mu_\\theta(\\theta)\|^2
 
             where:
                 - :math:`q_\phi(\\theta|\hat{x})`: Posterior flow (amortized inference)
@@ -335,11 +335,12 @@ class SimplifiedPosteriorLoss:
                 - Ensures corrected distribution remains plausible under simulator
                 - Weighted by :math:`\lambda_{KL}` (config.model.lambda_kl)
 
-            3. **Shrinkage Prior**: :math:`\|\mu_\\theta(\\theta)\|^2 + \|diag(\Sigma_\psi)\|^2`
-                - Regularizes correction toward identity (no correction)
-                - Penalizes large mean shifts and covariance corrections
+            3. **Shrinkage Prior**: :math:`\|\mu_\\theta(\\theta)\|^2`
+                - Regularizes neural mean shift toward zero (no mean correction)
+                - Penalizes large outputs from the mean neural network
                 - Weighted by :math:`\lambda_{shrinkage}` (config.model.lambda_shrinkage)
-                - Only applies to mu_hybrid correction models
+                - Only applies to NN (neural network) correction models with neural mean shift
+                - **Important**: Does NOT penalize covariance - only the mean neural network output
 
         Implementation Details:
             **Posterior Term**:
@@ -353,9 +354,9 @@ class SimplifiedPosteriorLoss:
                 - Average over all samples
 
             **Shrinkage Term**:
-                - For MuHybridCorrectionModel: :math:`\|\mu_\\theta(\\theta)\|^2` via get_mean_shift_magnitude()
-                - Diagonal penalty: :math:`\|diag(\Sigma_\psi)\|^2` for all correction models
-                - Encourages minimal correction when misspecification is small
+                - For NN correction model: :math:`\|\mu_\\theta(\\theta)\|^2` via get_mean_shift_magnitude()
+                - Encourages neural mean shift to be minimal when misspecification is small
+                - Does NOT apply to covariance parameters - only regularizes the mean neural network
 
         Training Modes:
             - **Joint training** (train_correction_only=False, train_posterior_only=False):
@@ -365,7 +366,7 @@ class SimplifiedPosteriorLoss:
               Update only correction model, freeze posterior. Used in Stage 4 warmup.
 
             - **Posterior only** (train_posterior_only=True):
-              Update only posterior, freeze correction. Used in Stage 6 final tuning.
+              Update only posterior, freeze correction. Used for final tuning.
 
         Notes:
             - Posterior theta sampling adapts training to the current posterior distribution
@@ -707,7 +708,7 @@ class SimplifiedPosteriorLoss:
 
                 diagonal_penalty = diagonal_penalty_batch.sum(-1).mean()  # Average across batch and sum across dimensions
 
-            # Add mean shift shrinkage for MuHybridCorrectionModel
+            # Shrinkage prior: only apply to mean neural network output (not covariance)
             mean_shift_penalty = 0.0
             if isinstance(correction_model, MuHybridCorrectionModel):
                 # Shrinkage prior on neural mean shift: ||μ_θ(θ)||²
@@ -716,7 +717,8 @@ class SimplifiedPosteriorLoss:
                 mean_shift_magnitudes = get_mean_magnitude_batch(theta_sim)  # (batch_size,)
                 mean_shift_penalty = jnp.mean(mean_shift_magnitudes)
 
-            shrinkage_loss = diagonal_penalty + mean_shift_penalty 
+            # Only apply shrinkage to mean neural network, not covariance
+            shrinkage_loss = mean_shift_penalty 
             
         else:
             # For other correction models, use fallback

@@ -82,10 +82,10 @@ Fixed diagonal covariance correction:
 
 **Use when**: Minimal misspecification, only need variance adjustment
 
-RVNP-mu_hybrid (Primary)
-^^^^^^^^^^^^^^^^^^^^^^^^^
+RVNP-NN (Neural Network, Primary)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Neural mean and hybrid covariance correction:
+Neural mean and neural covariance correction:
 
 .. math::
 
@@ -130,16 +130,17 @@ RVNP jointly trains the posterior :math:`q_\phi(\theta|\hat{x})` and correction 
 
    .. math::
 
-       \mathcal{R}_{\text{shrink}}(\psi) = \mathbb{E}_\theta[\|\mu_\theta(\theta)\|^2 + \|\text{diag}(\Sigma_\psi(\theta))\|^2]
+       \mathcal{R}_{\text{shrink}}(\psi) = \mathbb{E}_\theta[\|\mu_\theta(\theta)\|^2]
 
-   - Regularizes correction toward identity (no correction)
-   - Prevents overfitting when misspecification is minimal
+   - Regularizes neural mean shift toward zero
+   - Prevents overfitting when mean misspecification is minimal
    - Weighted by :math:`\lambda_{\text{shrinkage}}`
+   - **Important**: Only penalizes the mean neural network output, NOT the covariance
 
 Multi-Stage Training
 ~~~~~~~~~~~~~~~~~~~~
 
-RVNP uses a 6-stage training pipeline:
+RVNP uses a multi-stage training pipeline:
 
 **Stage 1**: Train embedding networks (if high-dimensional observations)
 
@@ -148,10 +149,6 @@ RVNP uses a 6-stage training pipeline:
 **Stage 3**: Initialize posterior :math:`q_\phi(\theta|x)` (optional)
 
 **Stage 4**: Joint training of :math:`q_\phi` and :math:`r_\psi` using full loss
-
-**Stage 5**: (Historical numbering - no stage 5)
-
-**Stage 6**: Final posterior tuning with fixed correction model
 
 This staged approach ensures stable learning and prevents collapse.
 
@@ -194,45 +191,6 @@ Other Metrics
 
 **ESS** (Effective Sample Size):
     Sample efficiency (SIR task only)
-
-Comparison to Related Work
----------------------------
-
-vs. Robust Neural Posterior Estimation (RNPE)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-- **RNPE**: Uses Gaussian mixture for flexibility but requires many components
-- **RVNP**: Uses correction model for explicit bias correction with shrinkage prior
-- **Advantage**: RVNP more parameter-efficient and interpretable
-
-vs. Noisy Neural Posterior Estimation (NNPE)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-- **NNPE**: Adds noise to observations, assumes symmetric noise
-- **RVNP**: Learns structured correction that can handle asymmetric biases
-- **Advantage**: RVNP handles systematic misspecification better
-
-vs. Contrastive Neural Ratio Estimation (NRE)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-- **NRE**: Learns likelihood ratio, robust to some misspecification
-- **RVNP**: Directly learns corrected posterior with calibration guarantees
-- **Advantage**: RVNP provides better calibration under misspecification
-
-Theoretical Guarantees
-----------------------
-
-Under mild regularity conditions, RVNP satisfies:
-
-1. **Consistency**: As :math:`n \to \infty`, :math:`q_\phi(\theta|\hat{x}) \to p(\theta|x_{\text{true}})`
-   if correction model has sufficient capacity
-
-2. **Calibration**: For well-specified correction, credible intervals achieve nominal coverage
-
-3. **Identifiability**: Correction parameters :math:`\psi` are identifiable from data under
-   appropriate loss weighting
-
-See paper for full proofs and conditions.
 
 Implementation Details
 ----------------------

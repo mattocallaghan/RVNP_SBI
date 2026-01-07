@@ -906,6 +906,10 @@ class MuHybridCorrectionModel(eqx.Module):
         preventing overfitting. The global bias :math:`\mu_{global}` is NOT penalized, allowing
         it to capture persistent systematic errors.
 
+        **Important**: The shrinkage prior ONLY applies to the mean neural network output
+        :math:`\mu_\\theta(\\theta)`, NOT to the covariance parameters. This allows the
+        covariance to freely adapt while regularizing only the mean shift.
+
     Attributes:
         L_global_raw: Raw parameters for global Cholesky factor (output_dim, output_dim)
         local_cholesky_net: MLP mapping :math:`\\theta` to local diagonal scaling (output_dim,)
@@ -939,7 +943,7 @@ class MuHybridCorrectionModel(eqx.Module):
         - :math:`q_\phi(\\theta|\hat{x})`: Posterior distribution
 
     Use Cases:
-        **RVNP-mu_hybrid (PRIMARY METHOD)**:
+        **RVNP-NN (PRIMARY METHOD)**:
             - Significant model misspecification with parameter-dependent errors
             - Unknown bias structure (both constant and parameter-varying components)
             - When RVNP-simple (diagonal covariance) is insufficient
