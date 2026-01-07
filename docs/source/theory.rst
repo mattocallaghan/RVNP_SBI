@@ -102,23 +102,27 @@ where:
 
 **Use when**: Significant parameter-dependent misspecification
 
-Variational Objective
-~~~~~~~~~~~~~~~~~~~~~
+Importance-Weighted Variational Objective
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-RVNP jointly trains the posterior :math:`q_\phi(\theta|\hat{x})` and correction :math:`r_\psi(\hat{x}|x,\theta)` by minimizing:
+RVNP jointly trains the posterior :math:`q_\phi(\theta|\hat{x})` and correction :math:`r_\psi(\hat{x}|x,\theta)` using an **importance-weighted variational objective**:
 
 .. math::
 
-    \mathcal{L}(\phi,\psi) = -\mathbb{E}_\theta \mathbb{E}_{x \sim p_{\text{sim}}(x|\theta)} \mathbb{E}_{\hat{x} \sim r_\psi(\hat{x}|x,\theta)} [\log q_\phi(\theta|\hat{x})]
+    \mathcal{L}(\phi,\psi) = -\mathbb{E}_\theta \mathbb{E}_{x \sim p_{\text{sim}}(x|\theta)} \mathbb{E}_{\hat{x}_1,\ldots,\hat{x}_K \sim r_\psi(\hat{x}|x,\theta)} \left[\frac{1}{K}\sum_{k=1}^K \log q_\phi(\theta|\hat{x}_k)\right]
     + \lambda_{\text{KL}} \cdot \text{KL}(r_\psi(\hat{x}|x,\theta) \| p_{\text{sim}}(x|\theta))
     + \lambda_{\text{shrinkage}} \cdot \mathcal{R}_{\text{shrink}}(\psi)
 
+where :math:`K` is the number of importance samples (``K_obs_samples`` in config, typically 30).
+
 **Loss Components**:
 
-1. **Posterior NLL** (first term):
+1. **Importance-Weighted Posterior NLL** (first term):
 
-   - Trains posterior to assign high probability to true :math:`\theta` given corrected observations
-   - Averaged over :math:`\theta`, simulator outputs :math:`x`, and corrected samples :math:`\hat{x}`
+   - Uses :math:`K` samples from correction model :math:`r_\psi(\hat{x}|x,\theta)` per :math:`(\theta, x)` pair
+   - Computes average log probability: :math:`\frac{1}{K}\sum_{k=1}^K \log q_\phi(\theta|\hat{x}_k)`
+   - Provides tighter variational bound than single-sample ELBO
+   - Averaged over :math:`\theta` and simulator outputs :math:`x`
 
 2. **KL Divergence** (second term):
 

@@ -172,13 +172,13 @@ def get_config():
     
     # === VARIATIONAL TRAINING PARAMETERS ===
     config.model.lambda_variational = 1.0                      # Variational loss weight
-    config.model.K_obs_samples = 30                            # Observation samples for training
+    config.model.K_obs_samples = 30                            # Number of importance samples (K) for ELBO
     config.model.lambda_shrinkage = 0.0                        # Shrinkage toward no misspecification, legacy
     config.model.use_variational = True                        # Enable variational terms, always true
     config.model.variational_temperature = 1.0                 # Temperature for log p samples
     config.model.use_kl_term = True                            # KL divergence term
     config.model.lambda_kl = 1.0                               # KL term weight
-    config.model.use_iw_elbo = True                            # Importance-weighted ELBO
+    config.model.use_iw_elbo = True                            # Importance-weighted ELBO (uses K_obs_samples)
     
     # === SIMULATOR SAMPLING (RVNP Enhancement) ===
     config.model.use_simulator_sampling = True                 # Fresh simulator sampling during correction
@@ -217,13 +217,15 @@ def get_config():
 **Correction Model:**
 - Core innovation of RVNP for handling model misspecification
 - `simple`: Fixed diagonal covariance (RVNP-simple baseline)
-- `mu_hybrid`: Neural mean + covariance correction (PRIMARY method)
+- `NN`: Neural mean + neural covariance correction (PRIMARY method)
 - Helps adjust for discrepancies between simulator and reality
 
-**Variational Training:**
+**Importance-Weighted Variational Training:**
+- Uses importance-weighted ELBO for tighter variational bound
+- `K_obs_samples`: Number of importance samples (K) per (θ, x) pair (typically 30)
+- For each training pair, samples K corrected observations and averages log probabilities
 - `lambda_variational`: Controls strength of variational objective
 - `variational_temperature`: Temperature for importance weighting
-- `K_obs_samples`: Number of observation samples for robust training
 
 **Simulator Sampling:**
 - `use_simulator_sampling`: Enables fresh data generation during training

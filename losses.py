@@ -276,20 +276,23 @@ class SimplifiedPosteriorLoss:
         train_correction_only: bool = False,
         train_posterior_only: bool = False,
     ) -> Float[Array, ""]:
-        """Compute RVNP variational loss with correction model.
+        """Compute RVNP importance-weighted variational loss with correction model.
 
-        Implements the robust variational objective for joint training of the posterior
-        flow and correction model. The loss combines posterior likelihood maximization,
-        distributional alignment via KL divergence, and shrinkage regularization.
+        Implements the robust **importance-weighted** variational objective for joint training
+        of the posterior flow and correction model. The loss combines importance-weighted
+        posterior likelihood maximization, distributional alignment via KL divergence,
+        and shrinkage regularization.
 
         Mathematical Formulation:
-            The loss implements:
+            The loss implements an **importance-weighted ELBO**:
 
             .. math::
 
-                L(\phi,\psi) = -E_\\theta E_{x \sim p_{sim}(x|\\theta)} E_{\hat{x} \sim r_\psi(\hat{x}|x,\\theta)} [\log q_\phi(\\theta|\hat{x})]
+                L(\phi,\psi) = -E_\\theta E_{x \sim p_{sim}(x|\\theta)} E_{\hat{x}_1,\ldots,\hat{x}_K \sim r_\psi(\hat{x}|x,\\theta)} \left[\\frac{1}{K}\sum_{k=1}^K \log q_\phi(\\theta|\hat{x}_k)\\right]
                              + \lambda_{KL} \cdot KL(r_\psi(\hat{x}|x,\\theta) \| p_{sim}(x|\\theta))
                              + \lambda_{shrinkage} \cdot \|\mu_\\theta(\\theta)\|^2
+
+            where :math:`K` = ``K_obs_samples`` (typically 30) is the number of importance samples.
 
             where:
                 - :math:`q_\phi(\\theta|\hat{x})`: Posterior flow (amortized inference)
@@ -325,10 +328,12 @@ class SimplifiedPosteriorLoss:
             Scalar loss value (negative ELBO + regularization terms)
 
         Loss Components:
-            1. **Posterior NLL**: :math:`-\log q_\phi(\\theta|\hat{x})`
-                - Encourages posterior to assign high probability to true :math:`\\theta`
-                  given corrected observations :math:`\hat{x} \sim r_\psi(\hat{x}|x,\\theta)`
-                - Averaged over :math:`\\theta`, :math:`x \sim p_{sim}(x|\\theta)`, and :math:`\hat{x} \sim r_\psi(\hat{x}|x,\\theta)`
+            1. **Importance-Weighted Posterior NLL**: :math:`-\\frac{1}{K}\sum_{k=1}^K \log q_\phi(\\theta|\hat{x}_k)`
+                - Samples :math:`K` corrected observations :math:`\hat{x}_1,\ldots,\hat{x}_K \sim r_\psi(\hat{x}|x,\\theta)`
+                - Computes average log probability across all :math:`K` samples
+                - **Key advantage**: Tighter variational bound than single-sample ELBO
+                - :math:`K` = ``K_obs_samples`` (config.model.K_obs_samples, typically 30)
+                - Averaged over :math:`\\theta` and :math:`x \sim p_{sim}(x|\\theta)`
 
             2. **KL Divergence**: :math:`KL(r_\psi(\hat{x}|x,\\theta) \| p_{sim}(x|\\theta))`
                 - Prevents correction model from deviating too far from simulator
@@ -343,9 +348,13 @@ class SimplifiedPosteriorLoss:
                 - **Important**: Does NOT penalize covariance - only the mean neural network output
 
         Implementation Details:
-            **Posterior Term**:
+            **Importance-Weighted Posterior Term**:
+                - For each :math:`(\\theta, x)` pair, sample :math:`K` corrected observations:
+                  :math:`\hat{x}_1,\ldots,\hat{x}_K \sim r_\psi(\hat{x}|x,\\theta)`
+                - Compute log probability for each: :math:`\log q_\phi(\\theta|\hat{x}_k)` for :math:`k=1,\ldots,K`
+                - Average: :math:`\\frac{1}{K}\sum_{k=1}^K \log q_\phi(\\theta|\hat{x}_k)`
+                - This importance-weighted average provides a tighter bound than single-sample ELBO
                 - If use_posterior_theta_sampling=True: Sample :math:`\\theta \sim q_\phi(\\theta|x_{obs})`
-                  for each :math:`x_{obs}` and compute :math:`-\log q_\phi(\\theta|\hat{x})`
                 - If use_posterior_theta_sampling=False: Use fixed training :math:`\\theta` values
 
             **KL Term**:
