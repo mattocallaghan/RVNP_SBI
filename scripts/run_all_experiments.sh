@@ -165,10 +165,10 @@ if [ $? -eq 0 ]; then
     echo "     python metrics_collector.py --summary"
     echo ""
     echo "  2. Generate publication plots:"
-    echo "     python publication_plots.py --task=all --save-dir=publication_plots"
+    echo "     python scripts/publication_plots.py --task=all --save-dir=publication_plots"
     echo ""
     echo "  3. Create summary table:"
-    echo "     python publication_plots.py --summary"
+    echo "     python scripts/publication_plots.py --summary"
     echo ""
 else
     echo ""

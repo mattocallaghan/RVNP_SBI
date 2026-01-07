@@ -6,22 +6,22 @@ import equinox as eqx
 import optax
 import functools
 from tqdm import tqdm
-from losses import MaximumLikelihoodLoss,ShannonLossEmbedding,SimplifiedPosteriorLoss
-from models.correction_model import CorrectionModel, SimpleCorrectionModel, DiagonalNeuralCorrectionModel, HybridCorrectionModel, FullNeuralCorrectionModel, MuHybridCorrectionModel, GlobalCorrectionModel
+from .losses import MaximumLikelihoodLoss,ShannonLossEmbedding,RVNPLoss
+from .models.correction_model import CorrectionModel, SimpleCorrectionModel, DiagonalNeuralCorrectionModel, HybridCorrectionModel, FullNeuralCorrectionModel, MuHybridCorrectionModel, GlobalCorrectionModel
 from tensorflow.summary import create_file_writer
-from utils import get_optimizer
+from .utils import get_optimizer
 import os
 import jax
 import pickle
 import numpy as np
 import tensorflow as tf
-from activation_functions import get_activation
+from .activation_functions import get_activation
 from flowjax.flows import masked_autoregressive_flow,block_neural_autoregressive_flow,coupling_flow
 from flowjax.bijections import RationalQuadraticSpline
 import paramax
-from models.embeddings import StatisticEmbedding,StatisticEmbedding_pendulum,StatisticEmbedding_spectra,StatisticDecoder,Discriminator,ReconstructionDecoder,ReconstructionDecoderSimple
-from models.priors import get_prior_from_config
-from model_utils import get_ranpt_model_breakdown, print_parameter_breakdown, save_parameter_breakdown, count_parameters
+from .models.embeddings import StatisticEmbedding,StatisticEmbedding_pendulum,StatisticEmbedding_spectra,StatisticDecoder,Discriminator,ReconstructionDecoder,ReconstructionDecoderSimple
+from .models.priors import get_prior_from_config
+from .model_utils import get_ranpt_model_breakdown, print_parameter_breakdown, save_parameter_breakdown, count_parameters
 
 
 
@@ -428,17 +428,17 @@ class Rational_Quadratic_Spline_w_posterior(Normalizing_Flow):
         # Stage 4: Joint training
         print("Stage 4: Joint training")
         key, subkey = jr.split(key)
-        key,self.flow,self.correction_model = self.train_single_stage(subkey, 'joint',self.flow,self.correction_model, train_data, inference_data,use_posterior_theta_sampling=True)
+        key,self.flow,self.correction_model = self.train_single_stage(subkey, 'joint',self.flow,self.correction_model, train_data, inference_data)
         # Final posterior tuning with fixed correction model (optional)
         if getattr(self.config.model, 'train_final_posterior', False):
             print("Final posterior tuning with fixed correction model...")
             key, subkey = jr.split(key)
-            key,self.flow,self.correction_model = self.train_single_stage(subkey, 'final_posterior',self.flow,self.correction_model, train_data, inference_data,use_posterior_theta_sampling=False)
+            key,self.flow,self.correction_model = self.train_single_stage(subkey, 'final_posterior',self.flow,self.correction_model, train_data, inference_data)
         print("Training system completed.")
         return key
     
     
-    def train_single_stage(self, key, stage_name,flow,correction_model, train_data, inference_data, max_epochs=None, use_posterior_theta_sampling=False):
+    def train_single_stage(self, key, stage_name,flow,correction_model, train_data, inference_data, max_epochs=None):
         """Train a single stage with appropriate loss function.
 
         Trains either the posterior flow, correction model, or both jointly depending on
@@ -458,10 +458,6 @@ class Rational_Quadratic_Spline_w_posterior(Normalizing_Flow):
                 - 'x_obs': Observed data for posterior inference
             max_epochs: Maximum training epochs (overrides config.training.final_epochs).
                        If None, uses config value. Default: None.
-            use_posterior_theta_sampling: Whether to sample θ from the posterior q_φ(θ|x)
-                                         or use fixed training θ. Default: False.
-                - If True: Sample θ ~ q_φ(θ|x) for each x (adapts to learned posterior)
-                - If False: Use fixed training θ values (standard amortized training)
 
         Returns:
             Tuple of (key, flow, correction_model):
@@ -472,20 +468,17 @@ class Rational_Quadratic_Spline_w_posterior(Normalizing_Flow):
         Stage Descriptions:
             joint:
                 Jointly trains both the posterior flow q_φ(θ|x̂) and correction model
-                r_ψ(x̂|x,θ) using the SimplifiedPosteriorLoss. This stage combines the
+                r_ψ(x̂|x,θ) using the RVNPLoss. This stage combines the
                 posterior likelihood, KL divergence between correction and simulator, and
                 shrinkage regularization.
 
             final_posterior:
-                Fine-tunes only the posterior flow q_φ(θ|x̂) while keeping the correction
-                model fixed. Uses increased consistency weight (lambda_consistency_final)
-                to improve calibration. This helps the posterior better match the corrected
-                observations.
+                Fine-tunes the posterior flow q_φ(θ|x̂) using RVNPLoss. This stage provides
+                additional training to improve calibration and help the posterior better match
+                the corrected observations.
 
         Notes:
-            - Both stages use SimplifiedPosteriorLoss but with different training flags
-            - Joint stage: train_correction_only=False, train_posterior_only=False
-            - Final posterior: train_correction_only=False, train_posterior_only=True
+            - Both stages use RVNPLoss for joint training of posterior and correction
             - Training epochs controlled by config.training.final_epochs (joint) or
               config.training.final_posterior_epochs (final_posterior)
             - Early stopping patience controlled by config.training.max_patience
@@ -505,8 +498,8 @@ class Rational_Quadratic_Spline_w_posterior(Normalizing_Flow):
 
 
         if stage_name == "joint":
-            # Joint training using SimplifiedPosteriorLoss
-            print(f"Training {stage_name} using SimplifiedPosteriorLoss (joint training)...")
+            # Joint training using RVNPLoss
+            print(f"Training {stage_name} using RVNPLoss (joint training)...")
             key, subkey = jr.split(key)
             flow, correction_model, stage_losses = self.fit_posterior_with_simplified_loss(
                 key=subkey,
@@ -519,15 +512,12 @@ class Rational_Quadratic_Spline_w_posterior(Normalizing_Flow):
                 learning_rate=self.config.optim.lr,
                 max_epochs=max_epochs,
                 max_patience=self.config.training.max_patience,
-                val_prop=self.config.training.validation_split,
-                train_correction_only=False,
-                train_posterior_only=False,
-                use_posterior_theta_sampling=use_posterior_theta_sampling
+                val_prop=self.config.training.validation_split
             )
             
         elif stage_name == "final_posterior":
-            # Final posterior tuning with fixed correction model and increased consistency weight
-            print(f"Training {stage_name} using SimplifiedPosteriorLoss (final posterior tuning)...")
+            # Final posterior tuning using RVNPLoss
+            print(f"Training {stage_name} using RVNPLoss (final posterior tuning)...")
             key, subkey = jr.split(key)
             flow, correction_model, stage_losses = self.fit_posterior_with_simplified_loss(
                 key=subkey,
@@ -540,11 +530,7 @@ class Rational_Quadratic_Spline_w_posterior(Normalizing_Flow):
                 learning_rate=self.config.optim.lr,
                 max_epochs=self.config.training.final_posterior_epochs,
                 max_patience=self.config.training.max_patience,
-                val_prop=self.config.training.validation_split,
-                train_correction_only=False,  # Don't train correction model
-                train_posterior_only=True,   # Train posterior only
-                use_posterior_theta_sampling=use_posterior_theta_sampling,
-                lambda_consistency_override=getattr(self.config.model, 'lambda_consistency_final', 1.0)  # Increased consistency weight
+                val_prop=self.config.training.validation_split
             )
             print("Final posterior tuning completed with fixed correction model")
             log_correction_model_diagnostics(self.correction_model, f"Final Posterior Tuning - {stage_name}")
@@ -609,7 +595,7 @@ class Rational_Quadratic_Spline_w_posterior(Normalizing_Flow):
         
         @eqx.filter_jit
         def step(params_simulator, z_target,theta, opt_state, key_step):
-            """Perform a single training step with SimplifiedPosteriorLoss."""
+            """Perform a single training step with RVNPLoss."""
  
             
             loss, grads = eqx.filter_value_and_grad(loss_fn)(
@@ -721,44 +707,25 @@ class Rational_Quadratic_Spline_w_posterior(Normalizing_Flow):
 
 
 
-    def fit_posterior_with_simplified_loss(self, key, dist, correction_model,embedding_model, x, eval, inference_data, max_epochs, max_patience, val_prop, learning_rate, 
-                                         train_correction_only=False, train_posterior_only=False, return_best=True, show_progress=True, use_posterior_theta_sampling=False, lambda_consistency_override=None):
-        """Fit posterior flow using SimplifiedPosteriorLoss (for correction/joint stages)."""
+    def fit_posterior_with_simplified_loss(self, key, dist, correction_model,embedding_model, x, eval, inference_data, max_epochs, max_patience, val_prop, learning_rate,
+                                         return_best=True, show_progress=True):
+        """Fit posterior flow using RVNPLoss (joint training of posterior and correction)."""
         workspace_dir = str(self.config.training.workspace)+'/Tensorboard'
         if not os.path.exists(workspace_dir):
             os.makedirs(workspace_dir)
         summary_writer = create_file_writer(workspace_dir)
         optimizer = get_optimizer(self.config)
         
-        # Initialize SimplifiedPosteriorLoss with config parameters
+        # Initialize RVNPLoss with config parameters
         # Use override consistency weight for final stage if provided
-        consistency_weight = self.config.model.lambda_consistency
-        
-        loss_fn = SimplifiedPosteriorLoss(
+        loss_fn = RVNPLoss(
             lambda_variational=self.config.model.lambda_variational,
-            K_obs_samples=self.config.model.K_obs_samples,
-            lambda_entropy=self.config.model.lambda_entropy,
-            use_variational=self.config.model.use_variational,
-            lambda_consistency=consistency_weight,
+            lambda_kl=getattr(self.config.model, 'lambda_kl', 1.0),
             lambda_shrinkage=self.config.model.lambda_shrinkage,
+            lambda_entropy=self.config.model.lambda_entropy,
             simulator_samples_per_theta=getattr(self.config.model, 'simulator_samples_per_theta', 100),
             n_sim_samples_per_theta=getattr(self.config.model, 'n_sim_samples_per_theta', 32),
-            use_posterior_theta_sampling=use_posterior_theta_sampling,  # Use the parameter passed to this method
-            lambda_kl=getattr(self.config.model, 'lambda_kl', 1.0),
-            use_posterior_term=getattr(self.config.model, 'use_posterior_term', True),
             prior=self.prior,
-            # MMD parameters
-            use_mmd_divergence=getattr(self.config.model, 'use_mmd_divergence', False),
-            lambda_mmd=getattr(self.config.model, 'lambda_mmd', 1.0),
-            mmd_n_samples=getattr(self.config.model, 'mmd_n_samples', 100),
-            mmd_n_corrected_samples=getattr(self.config.model, 'mmd_n_corrected_samples', 50),
-            use_median_heuristic=getattr(self.config.model, 'use_median_heuristic', True),
-            mmd_sigma=getattr(self.config.model, 'mmd_sigma', 1.0),
-            # Theta clipping parameters (bounds always computed)
-            theta_min=self.theta_min,
-            theta_max=self.theta_max,
-            clip_theta_to_bounds=getattr(self.config.model, 'clip_theta_to_bounds', True),
-            # Empirical bias for data-driven shrinkage prior
             empirical_bias=self.empirical_bias,
         )
 
@@ -799,7 +766,7 @@ class Rational_Quadratic_Spline_w_posterior(Normalizing_Flow):
         
         @eqx.filter_jit
         def step(params_flow, params_correction, batch, x_obs, opt_state, key_step):
-            """Perform a single training step with SimplifiedPosteriorLoss."""
+            """Perform a single training step with RVNPLoss."""
             # Extract θ and x_sim from training batch  
             theta = batch[..., :self.config.model.flow_dimension]
             x_sim = batch[..., self.config.model.flow_dimension:]
@@ -818,9 +785,7 @@ class Rational_Quadratic_Spline_w_posterior(Normalizing_Flow):
                     x_obs=x_obs,
                     theta=theta,
                     key=key_step,
-                    embedding_stats=embedding_stats,
-                    train_correction_only=train_correction_only,
-                    train_posterior_only=train_posterior_only
+                    embedding_stats=embedding_stats
                 )
             
             def combined_loss_wrapper(combined_params):
@@ -829,32 +794,19 @@ class Rational_Quadratic_Spline_w_posterior(Normalizing_Flow):
             
             loss_val, combined_grads = eqx.filter_value_and_grad(combined_loss_wrapper)((params_flow, params_correction))
             flow_grads, correction_grads = combined_grads
-            
-            # Apply gradients based on training mode
-            if train_correction_only:
-                updates, opt_state = optimizer.update(correction_grads, opt_state, params_correction)
-                params_correction = eqx.apply_updates(params_correction, updates)
-            elif train_posterior_only:
-                updates, opt_state = optimizer.update(flow_grads, opt_state, params_flow)
-                params_flow = eqx.apply_updates(params_flow, updates)
-            else:  # joint training
-                # Combine parameters for single optimizer
-                combined_params = (params_flow, params_correction)
-                combined_grads = (flow_grads, correction_grads)
-                updates, opt_state = optimizer.update(combined_grads, opt_state, combined_params)
-                params_flow, params_correction = eqx.apply_updates(combined_params, updates)
-            
+
+            # Joint training: update both posterior and correction
+            combined_params = (params_flow, params_correction)
+            combined_grads = (flow_grads, correction_grads)
+            updates, opt_state = optimizer.update(combined_grads, opt_state, combined_params)
+            params_flow, params_correction = eqx.apply_updates(combined_params, updates)
+
             return params_flow, params_correction, opt_state, loss_val
 
         best_params_flow = params_flow
         best_params_correction = params_correction
-        # Initialize optimizer state based on training mode
-        if train_correction_only:
-            opt_state = optimizer.init(params_correction)
-        elif train_posterior_only:
-            opt_state = optimizer.init(params_flow)
-        else:  # joint training
-            opt_state = optimizer.init((params_flow, params_correction))
+        # Initialize optimizer state for joint training
+        opt_state = optimizer.init((params_flow, params_correction))
         
         key, subkey = jr.split(key)
         losses = {"train": [], "val": []}
@@ -891,7 +843,7 @@ class Rational_Quadratic_Spline_w_posterior(Normalizing_Flow):
             if epoch % 20 == 0:  # Print every 20 epochs to reduce clutter
                 if hasattr(self, 'correction_model') and self.correction_model is not None:
                     correction_combined = eqx.combine(params_correction, static_correction)
-                    from models.correction_model import HybridCorrectionModel, FullNeuralCorrectionModel, MuHybridCorrectionModel, GlobalCorrectionModel
+                    from .models.correction_model import HybridCorrectionModel, FullNeuralCorrectionModel, MuHybridCorrectionModel, GlobalCorrectionModel
                     if isinstance(correction_combined, GlobalCorrectionModel):
                         # GlobalCorrectionModel - no theta dependence
                         cov_matrix = correction_combined.get_covariance_matrix()
@@ -942,9 +894,7 @@ class Rational_Quadratic_Spline_w_posterior(Normalizing_Flow):
                     x_obs=current_val_x_obs_batch,  # Use batched inference data as real observations
                     theta=theta_val,
                     key=subkey,
-                    embedding_stats=embedding_stats,
-                    train_correction_only=train_correction_only,
-                    train_posterior_only=train_posterior_only
+                    embedding_stats=embedding_stats
                 )
                 val_losses.append(val_loss)
                 val_obs_batch_idx += 1
@@ -962,8 +912,7 @@ class Rational_Quadratic_Spline_w_posterior(Normalizing_Flow):
                 patience_counter += 1
                 
             if epoch % 20 == 0:
-                mode_str = "correction_only" if train_correction_only else "posterior_only" if train_posterior_only else "joint"
-                print(f"Simplified Loss Epoch {epoch} ({mode_str}), Train Loss: {avg_train_loss:.6f}, Val Loss: {avg_val_loss:.6f}")
+                print(f"RVNP Loss Epoch {epoch}, Train Loss: {avg_train_loss:.6f}, Val Loss: {avg_val_loss:.6f}")
                 
                 # Also log the loss components computed above if they exist
                 # (This will show the breakdown from the sample batch computed earlier)
@@ -2124,8 +2073,8 @@ def log_correction_model_diagnostics(correction_model, stage_name: str, eval_dat
         eval_data: Optional evaluation data for computing log probabilities
     """
     print(f"\n🔍 === CORRECTION MODEL DIAGNOSTICS: {stage_name} ===")
-    
-    from models.correction_model import SimpleCorrectionModel, HybridCorrectionModel, FullNeuralCorrectionModel, MuHybridCorrectionModel, GlobalCorrectionModel
+
+    from .models.correction_model import SimpleCorrectionModel, HybridCorrectionModel, FullNeuralCorrectionModel, MuHybridCorrectionModel, GlobalCorrectionModel
     
     if isinstance(correction_model, SimpleCorrectionModel):
         # Get the covariance matrix from Cholesky parameterization

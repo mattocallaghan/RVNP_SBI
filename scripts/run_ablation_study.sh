@@ -190,7 +190,7 @@ if [ "$PLOTS_ONLY" = true ]; then
         exit 1
     fi
 
-    python ablation_plots.py \
+    python scripts/ablation_plots.py \
         --metrics-db="$RESULTS_DIR/ablation_metrics.csv" \
         --save-dir="$PLOTS_DIR"
 
@@ -251,7 +251,7 @@ for i in "${!CONFIGS_TO_RUN[@]}"; do
     echo ""
 
     # Build command
-    CMD="python main_train_eval.py --config=$config"
+    CMD="python scripts/main_train_eval.py --config=$config"
 
     if [ "$SKIP_TRAINING" = false ]; then
         CMD="$CMD --train"
@@ -302,7 +302,7 @@ if [ -f "$METRICS_FILE" ]; then
         echo ""
 
         if [ -f "ablation_plots.py" ]; then
-            python ablation_plots.py \
+            python scripts/ablation_plots.py \
                 --metrics-db="$METRICS_FILE" \
                 --save-dir="$PLOTS_DIR" \
                 2>&1 | head -20

@@ -977,7 +977,7 @@ class MuHybridCorrectionModel(eqx.Module):
         - Global mean shift captures simulator bias (e.g., wrong physical constant)
         - Neural mean shift captures parameter-specific errors
         - Hybrid covariance balances expressiveness and sample efficiency
-        - Training uses SimplifiedPosteriorLoss with shrinkage prior
+        - Training uses RVNPLoss with shrinkage prior
 
     See Also:
         - SimpleCorrectionModel: Simpler baseline with fixed diagonal covariance
@@ -1120,14 +1120,14 @@ class MuHybridCorrectionModel(eqx.Module):
             >>> # Use in loss: loss += lambda_shrinkage * magnitude
 
         Notes:
-            - Called during SimplifiedPosteriorLoss computation (losses.py:576-613)
+            - Called during RVNPLoss computation (losses.py:576-613)
             - Computed via vmap over batch in training loop
             - Gradient flows through to mean_shift_net parameters
             - Does NOT include the identity component :math:`x` or global bias :math:`\mu_{global}`
             - Typical values: magnitude ∈ [0.001, 10.0] depending on misspecification severity
 
         See Also:
-            - SimplifiedPosteriorLoss: Uses this method for shrinkage regularization
+            - RVNPLoss: Uses this method for shrinkage regularization
             - get_mean_shift(): Returns full mean shift including global bias
             - HybridCorrectionModel: No neural mean shift, so no shrinkage on mean
         """

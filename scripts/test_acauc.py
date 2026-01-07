@@ -5,8 +5,9 @@ Quick test of ACAUC implementation
 
 import numpy as np
 import sys
-sys.path.insert(0, '.')
-from evaluate import Evaluator
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from src.evaluate import Evaluator
 
 def test_acauc():
     """Test ACAUC with known distributions"""

@@ -65,7 +65,7 @@ If you use this code in your research, please cite:
 
 4. **Run RVNP on CS Task:**
    ```bash
-   python main_train_eval.py --config=configs/CS_task/cs_task.py --mode=train
+   python scripts/main_train_eval.py --config=configs/CS_task/cs_task.py --mode=train
    ```
 
 ## Directory Structure
@@ -74,29 +74,46 @@ If you use this code in your research, please cite:
 RVNP_SBI/
 ├── README.md                 # This file
 ├── requirements.txt          # Python dependencies
-├── main_train_eval.py       # Main training script
-├── run_lib.py               # Training pipeline implementation
-├── datasets.py              # Dataset loading and generation
-├── utils.py                 # Utility functions and task implementations
-├── losses.py                # Loss function definitions
-├── activation_functions.py  # Custom activation functions
-├── normalizing_flow.py      # Normalizing flow implementations
+│
+├── src/                      # Core source code
+│   ├── __init__.py
+│   ├── normalizing_flow.py  # Normalizing flow implementations (RANPT)
+│   ├── losses.py            # Loss function definitions (RVNPLoss)
+│   ├── datasets.py          # Dataset loading and generation
+│   ├── utils.py             # Utility functions and task implementations
+│   ├── run_lib.py           # Training pipeline implementation
+│   ├── evaluate.py          # Evaluation and metrics
+│   ├── activation_functions.py  # Custom activation functions
+│   ├── model_utils.py       # Model utilities (parameter counting)
+│   ├── time_tracker.py      # Training time tracking
+│   ├── metrics_collector.py # Metrics collection
+│   ├── training_utils.py    # Training utilities
+│   │
+│   └── models/              # Neural network model implementations
+│       ├── __init__.py
+│       ├── correction_model.py  # Correction models (RVNP core)
+│       ├── embeddings.py    # Embedding networks
+│       └── priors.py        # Prior distributions
+│
+├── scripts/                 # Executable scripts
+│   ├── main_train_eval.py   # Main training script
+│   ├── integrated_pipeline.py  # Complete experimental pipeline
+│   ├── publication_plots.py    # Generate publication plots
+│   ├── ablation_plots.py       # Generate ablation study plots
+│   ├── verify_configs.py       # Verify config files
+│   ├── test_acauc.py          # Test ACAUC implementation
+│   ├── run_experiments_colab.sh  # Run all experiments (resumable)
+│   ├── run_wellspec_experiments.sh  # Run well-specified experiments
+│   └── run_ablation_study.sh      # Run ablation studies
 │
 ├── configs/                 # Configuration files for different experiments
 │   ├── default_flow.py      # Base configuration
 │   ├── CS_task/            # Compressed Sensing task configs
-│   ├── Gaussian_Mixture/   # Gaussian mixture model configs  ### not implemented in paper
+│   ├── Gaussian_Mixture/   # Gaussian mixture model configs
 │   ├── SIR/               # SIR epidemiological model configs
 │   ├── Pendulum/          # Pendulum dynamics configs
 │   ├── Spectra/           # Spectral analysis configs
 │   └── gaussian_embedding/ # Gaussian embedding configs
-│
-├── models/                  # Neural network model implementations
-│   ├── __init__.py
-│   ├── correction_model.py  # Correction models for misspecification
-│   ├── embeddings.py        # Embedding networks
-│   ├── priors.py           # Prior distributions
-│   
 │
 ├── Julia/                   # Julia implementations
 │   └── SIR.jl              # SIR model simulator in Julia
@@ -128,7 +145,7 @@ julia -e 'using Pkg; Pkg.add(["LinearAlgebra", "StochasticDiffEq", "NPZ", "ArgPa
 
 ### Basic RVNP Training
 ```bash
-python main_train_eval.py --config=path/to/config.py --mode=train
+python scripts/main_train_eval.py --config=path/to/config.py --mode=train
 ```
 
 ## RVNP Configuration

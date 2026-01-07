@@ -7,7 +7,10 @@ import jax
 os.environ["JAX_ENABLE_X64"] = "True"
 jax.config.update('jax_enable_x64', True)
 
-import run_lib
+import sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from src import run_lib
 from absl import app
 from absl import flags
 from ml_collections.config_flags import config_flags

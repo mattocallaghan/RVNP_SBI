@@ -15,7 +15,7 @@ import paramax
 import optax
 from flowjax.distributions import AbstractDistribution
 
-from models.correction_model import (
+from .models.correction_model import (
     CorrectionModel, SimpleCorrectionModel, DiagonalNeuralCorrectionModel,
     HybridCorrectionModel, FullNeuralCorrectionModel, MuHybridCorrectionModel,
     GlobalCorrectionModel
@@ -178,85 +178,37 @@ class ShannonLossEmbedding(eqx.Module):
 
 
 
-class SimplifiedPosteriorLoss:
+class RVNPLoss:
     """
-    Simplified loss function for SBI with correction model and Soft Attention-based Contrastive Learning.
+    RVNP Loss: Robust Variational Neural Posterior loss function.
 
-    Implements:
-    L(φ,ψ) = E_θ E_x|θ E_x_obs|x [-log p(θ|x_obs)] + λ_contrastive * AttentionContrastive(x, x_obs) + λ_entropy * H(p(x_obs|x))
-    + consistency term
-    
+    Implements the importance-weighted variational objective with shrinkage and entropy regularization:
+
+    L(φ,ψ) = IW-ELBO + λ_shrinkage * ||μ_θ(θ)||² + λ_entropy * H(r_ψ)
+
+    where IW-ELBO is the importance-weighted evidence lower bound computed via _kl_divergence.
     """
     
     def __init__(
         self,
-        lambda_variational: float = 1.0,  # Weight for variational loss
-        K_obs_samples: int = 32,
-        lambda_entropy: float = 0.00,
-        use_variational: bool = True,
-        lambda_consistency: float = 0.0,
-        lambda_shrinkage: float = 0.00,  # Shrinkage prior toward delta function
+        lambda_variational: float = 1.0,  # Weight for IW-ELBO term
+        lambda_kl: float = 1.0,  # Weight for KL divergence within ELBO
+        lambda_shrinkage: float = 0.0,  # Shrinkage prior on mean neural network
+        lambda_entropy: float = 0.0,  # Entropy regularization for covariance
         simulator_samples_per_theta: int = 32,  # Number of theta samples from posterior per observation
         n_sim_samples_per_theta: int = 32,  # Number of x_sim samples per theta in KL divergence
-        use_posterior_theta_sampling: bool = True,  # True=sample theta from posterior, False=use fixed training theta
-        lambda_kl: float = 1.0,  # Weight for KL term
-        use_posterior_term: bool = True,  # True=include posterior NLL term, False=skip it
-        prior: AbstractDistribution = None,  # Prior distribution (if needed)
-        # MMD parameters
-        use_mmd_divergence: bool = False,  # Enable MMD instead of KL divergence
-        lambda_mmd: float = 1.0,  # Weight for MMD loss term
-        mmd_n_samples: int = 100,  # Number of simulator samples per theta for MMD
-        mmd_n_corrected_samples: int = 50,  # Number of corrected samples per x_sim
-        use_median_heuristic: bool = True,  # Use median heuristic for RBF bandwidth
-        mmd_sigma: float = 1.0,  # Fixed RBF bandwidth (used if use_median_heuristic=False)
-        # Theta clipping parameters
-        theta_min: Array = None,  # Minimum theta values for clipping (per dimension)
-        theta_max: Array = None,  # Maximum theta values for clipping (per dimension)
-        clip_theta_to_bounds: bool = False,  # Enable theta clipping
-        # Empirical bias for shrinkage prior
-        empirical_bias: Array = None,  # Empirical bias to target in shrinkage prior
+        prior: AbstractDistribution = None,  # Prior distribution
+        empirical_bias: Array = None,  # Empirical bias for shrinkage prior (optional)
     ):
         self.lambda_variational = lambda_variational
-        self.K_obs_samples = K_obs_samples
+        self.lambda_kl = lambda_kl
+        self.lambda_shrinkage = lambda_shrinkage
         self.lambda_entropy = lambda_entropy
-        self.use_variational = use_variational  # Controls variational learning vs uniform MLE
-        self.simulator_samples_per_theta = simulator_samples_per_theta  # Number of theta samples from posterior
-        self.n_sim_samples_per_theta = n_sim_samples_per_theta  # Number of x_sim samples per theta
-        self.use_posterior_theta_sampling = use_posterior_theta_sampling  # Controls theta sampling source
-        self.lambda_consistency = lambda_consistency
-        self.lambda_shrinkage = lambda_shrinkage  # Shrinkage prior toward delta function
-        self.lambda_kl = lambda_kl  # Weight for KL term
-        self.use_posterior_term = use_posterior_term  # Controls posterior NLL term
-        self.prior=prior
-        # MMD parameters
-        self.use_mmd_divergence = use_mmd_divergence
-        self.lambda_mmd = lambda_mmd
-        self.mmd_n_samples = mmd_n_samples
-        self.mmd_n_corrected_samples = mmd_n_corrected_samples
-        self.use_median_heuristic = use_median_heuristic
-        self.mmd_sigma = mmd_sigma
-        # Theta clipping parameters
-        self.theta_min = theta_min
-        self.theta_max = theta_max
-        self.clip_theta_to_bounds = clip_theta_to_bounds
-        # Empirical bias for shrinkage prior
+        self.simulator_samples_per_theta = simulator_samples_per_theta
+        self.n_sim_samples_per_theta = n_sim_samples_per_theta
+        self.prior = prior
         self.empirical_bias = empirical_bias
-    
-    def _clip_theta(self, theta: Array) -> Array:
-        """
-        Clip theta values to the training data bounds if clipping is enabled.
-        
-        Args:
-            theta: Theta values to clip (any shape ending with theta_dim)
-            
-        Returns:
-            Clipped theta values (same shape as input)
-        """
-        if not self.clip_theta_to_bounds:
-            return theta
-        
-        return jnp.clip(theta, self.theta_min, self.theta_max)
-    
+
     @eqx.filter_jit
     def __call__(
         self,
@@ -272,27 +224,22 @@ class SimplifiedPosteriorLoss:
         theta: Array,
         key: PRNGKeyArray,
         embedding_stats: dict = None,
-        # Training mode flags passed as arguments
-        train_correction_only: bool = False,
-        train_posterior_only: bool = False,
     ) -> Float[Array, ""]:
-        """Compute RVNP importance-weighted variational loss with correction model.
+        """Compute RVNP loss: importance-weighted variational objective with regularization.
 
-        Implements the robust **importance-weighted** variational objective for joint training
-        of the posterior flow and correction model. The loss combines importance-weighted
-        posterior likelihood maximization, distributional alignment via KL divergence,
-        and shrinkage regularization.
+        Implements the RVNP loss function with three components:
+
+        1. **Importance-Weighted ELBO** (via _kl_divergence)
+        2. **Shrinkage Prior** (on mean neural network)
+        3. **Entropy Regularization** (for full-rank covariance)
 
         Mathematical Formulation:
-            The loss implements an **importance-weighted ELBO**:
 
             .. math::
 
-                L(\phi,\psi) = -E_\\theta E_{x \sim p_{sim}(x|\\theta)} E_{\hat{x}_1,\ldots,\hat{x}_K \sim r_\psi(\hat{x}|x,\\theta)} \left[\\frac{1}{K}\sum_{k=1}^K \log q_\phi(\\theta|\hat{x}_k)\\right]
-                             + \lambda_{KL} \cdot KL(r_\psi(\hat{x}|x,\\theta) \| p_{sim}(x|\\theta))
-                             + \lambda_{shrinkage} \cdot \|\mu_\\theta(\\theta)\|^2
+                L(\phi,\psi) = \\text{IW-ELBO} + \lambda_{shrinkage} \cdot \|\mu_\\theta(\\theta)\|^2 + \lambda_{entropy} \cdot H(r_\psi)
 
-            where :math:`K` = ``K_obs_samples`` (typically 30) is the number of importance samples.
+            where IW-ELBO is computed via the _kl_divergence method.
 
             where:
                 - :math:`q_\phi(\\theta|\hat{x})`: Posterior flow (amortized inference)
@@ -319,78 +266,14 @@ class SimplifiedPosteriorLoss:
             embedding_stats: Optional dictionary with embedding statistics:
                 - 'mean': Normalization mean
                 - 'std': Normalization standard deviation
-            train_correction_only: If True, only update correction model parameters.
-                                  Gradients for posterior and embedding are zeroed.
-            train_posterior_only: If True, only update posterior parameters.
-                                 Gradients for correction model are zeroed.
 
         Returns:
-            Scalar loss value (negative ELBO + regularization terms)
-
-        Loss Components:
-            1. **Importance-Weighted Posterior NLL**: :math:`-\\frac{1}{K}\sum_{k=1}^K \log q_\phi(\\theta|\hat{x}_k)`
-                - Samples :math:`K` corrected observations :math:`\hat{x}_1,\ldots,\hat{x}_K \sim r_\psi(\hat{x}|x,\\theta)`
-                - Computes average log probability across all :math:`K` samples
-                - **Key advantage**: Tighter variational bound than single-sample ELBO
-                - :math:`K` = ``K_obs_samples`` (config.model.K_obs_samples, typically 30)
-                - Averaged over :math:`\\theta` and :math:`x \sim p_{sim}(x|\\theta)`
-
-            2. **KL Divergence**: :math:`KL(r_\psi(\hat{x}|x,\\theta) \| p_{sim}(x|\\theta))`
-                - Prevents correction model from deviating too far from simulator
-                - Ensures corrected distribution remains plausible under simulator
-                - Weighted by :math:`\lambda_{KL}` (config.model.lambda_kl)
-
-            3. **Shrinkage Prior**: :math:`\|\mu_\\theta(\\theta)\|^2`
-                - Regularizes neural mean shift toward zero (no mean correction)
-                - Penalizes large outputs from the mean neural network
-                - Weighted by :math:`\lambda_{shrinkage}` (config.model.lambda_shrinkage)
-                - Only applies to NN (neural network) correction models with neural mean shift
-                - **Important**: Does NOT penalize covariance - only the mean neural network output
-
-        Implementation Details:
-            **Importance-Weighted Posterior Term**:
-                - For each :math:`(\\theta, x)` pair, sample :math:`K` corrected observations:
-                  :math:`\hat{x}_1,\ldots,\hat{x}_K \sim r_\psi(\hat{x}|x,\\theta)`
-                - Compute log probability for each: :math:`\log q_\phi(\\theta|\hat{x}_k)` for :math:`k=1,\ldots,K`
-                - Average: :math:`\\frac{1}{K}\sum_{k=1}^K \log q_\phi(\\theta|\hat{x}_k)`
-                - This importance-weighted average provides a tighter bound than single-sample ELBO
-                - If use_posterior_theta_sampling=True: Sample :math:`\\theta \sim q_\phi(\\theta|x_{obs})`
-                - If use_posterior_theta_sampling=False: Use fixed training :math:`\\theta` values
-
-            **KL Term**:
-                - For each :math:`\\theta`, sample :math:`K` observations :math:`x \sim p_{sim}(x|\\theta)`
-                - For each :math:`x`, compute :math:`KL(r_\psi(\cdot|x,\\theta) \| p_{sim}(\cdot|\\theta))`
-                - Average over all samples
-
-            **Shrinkage Term**:
-                - For NN correction model: :math:`\|\mu_\\theta(\\theta)\|^2` via get_mean_shift_magnitude()
-                - Encourages neural mean shift to be minimal when misspecification is small
-                - Does NOT apply to covariance parameters - only regularizes the mean neural network
-
-        Training Modes:
-            - **Joint training** (train_correction_only=False, train_posterior_only=False):
-              Update both posterior and correction model. Used in Stage 4.
-
-            - **Correction only** (train_correction_only=True):
-              Update only correction model, freeze posterior. Used in Stage 4 warmup.
-
-            - **Posterior only** (train_posterior_only=True):
-              Update only posterior, freeze correction. Used for final tuning.
+            Scalar loss value = IW-ELBO + shrinkage + entropy
 
         Notes:
-            - Posterior theta sampling adapts training to the current posterior distribution
-            - KL divergence computed analytically for Gaussian correction models
-            - Shrinkage prior only applies to models with neural mean shifts (mu_hybrid)
-            - Loss is JIT-compiled via @eqx.filter_jit for performance
-
-        Example:
-            >>> loss_fn = SimplifiedPosteriorLoss(lambda_kl=1.0, lambda_shrinkage=0.1)
-            >>> loss = loss_fn(
-            ...     params_flow, static_flow,
-            ...     params_embedding, static_embedding,
-            ...     params_correction, static_correction,
-            ...     simulator_flow, x_sim, x_obs, theta, key
-            ... )
+            - IW-ELBO computed via _kl_divergence (importance-weighted variational objective)
+            - Shrinkage only applies to NN correction models (mean neural network)
+            - Entropy regularization encourages full-rank covariance
         """
 
         ###########
@@ -423,207 +306,33 @@ class SimplifiedPosteriorLoss:
             x_sim_processed = x_sim
             x_obs_processed = x_obs
         # ======== ======== ======== ======== ======== ======== ========
-        # ======== POSTERIOR CORRECTION TERMS                   ========
+        # ========           RVNP LOSS COMPONENTS               ========
         # ======== ======== ======== ======== ======== ======== ========
-        # ======== Term 1: Posterior normalizing flow loss ========
-        # Compute posterior loss when training posterior (posterior-only OR joint training)
-        posterior_nll = 0.0
-        if (train_posterior_only or  self.use_posterior_term):
-            key_correction, key = jax.random.split(key)
-            def sample_multiple_x_obs(x_sim_single, theta_single, key_single):
-                keys_multiple = jax.random.split(key_single, self.K_obs_samples)
-                if isinstance(correction_model, SimpleCorrectionModel):
-                    mu, L = correction_model(x_sim_single[None, :], theta_single[None, :])
-                    mu = mu[0]
-                    # Stop correction gradients only in posterior-only or alternating modes
-                    if train_posterior_only:
-                        mu = jax.lax.stop_gradient(mu)
-                        L = jax.lax.stop_gradient(L)
-                    noise_samples = vmap(lambda k: jax.random.normal(k, x_sim_single.shape))(keys_multiple)
-                    x_obs_samples = vmap(lambda noise: mu + L @ noise)(noise_samples)
-                elif isinstance(correction_model, DiagonalNeuralCorrectionModel):
-                    mu, diag_values = correction_model(x_sim_single, theta_single)  # Single sample input
-                    # Stop correction gradients only in posterior-only or alternating modes
-                    if train_posterior_only:
-                        mu = jax.lax.stop_gradient(mu)
-                        diag_values = jax.lax.stop_gradient(diag_values)
-                    # Sample from diagonal Gaussian: diag_values are variances, need sqrt for std dev
-                    noise_samples = vmap(lambda k: jax.random.normal(k, x_sim_single.shape))(keys_multiple)
-                    x_obs_samples = vmap(lambda noise: mu + jnp.sqrt(diag_values) * noise)(noise_samples)
-                
-                else:
-                    # HybridCorrectionModel/MuHybridCorrectionModel case
-                    mu, sigma = correction_model(x_sim_single[None, :], theta_single[None, :])
-                    mu, sigma = mu[0], sigma[0]
-                    if train_posterior_only:
-                        mu = jax.lax.stop_gradient(mu)
-                        sigma = jax.lax.stop_gradient(sigma)
-                    noise_samples = vmap(lambda k: jax.random.normal(k, x_sim_single.shape))(keys_multiple)
-                    x_obs_samples = vmap(lambda noise: mu + sigma * noise)(noise_samples)
-                posterior_log_probs = vmap(lambda x_obs: flow.log_prob(theta_single, x_obs))(x_obs_samples)
-                return jnp.mean(posterior_log_probs),x_obs_samples
-            keys_batch = jax.random.split(key_correction, batch_size)
-            averaged_posterior_log_probs ,x_obs_samples_batch= vmap(sample_multiple_x_obs)(x_sim_processed, theta, keys_batch)
-            posterior_nll = -jnp.mean(averaged_posterior_log_probs)
 
-        # ========  Regularization (for posterior training) ========
-        consistency_loss = 0.0
-        if (self.lambda_consistency > 0.0):
-            key_consistency, key = jax.random.split(key)
-            keys_batch = jax.random.split(key_consistency, batch_size)
-            # use x_obs_samples from posterior sampling
-            # Compute consistency regularization
-            consistency_loss = self.lambda_consistency*self._compute_consistency_regularization(flow, theta, x_sim_processed, x_obs_samples_batch, key)
+        # Term 1: Importance-Weighted Variational Loss (IW-ELBO)
+        key_variational, key = jax.random.split(key)
+        reverse = False  # Use forward KL divergence
+        variational_loss = self.lambda_variational * self._kl_divergence(
+            correction_model, simulator_flow, flow, reverse, x_obs_processed, key_variational,
+            n_samples=self.simulator_samples_per_theta, kl_weight=self.lambda_kl, prior_log=self.prior.log_prob
+        )
 
-        # ======== Term 3: Shrinkage Prior (Delta Function Prior) ========
-
+        # Term 2: Shrinkage Prior (only on mean neural network)
         shrinkage_loss = 0.0
         if self.lambda_shrinkage > 0.0:
             shrinkage_loss = self.lambda_shrinkage * self._compute_shrinkage_prior(correction_model, theta)
-        
 
-        # ======== Term 4: Entropy Regularization (Full-Rank Covariance) ========
+        # Term 3: Entropy Regularization (full-rank covariance)
         entropy_loss = 0.0
         if self.lambda_entropy > 0.0:
-            entropy_loss = self._compute_entropy_regularization(correction_model, x_sim_processed)
-        # ======== ======== ======== ======== ======== ======== ========
-        # ========              evidence terms                  ========
-        # ======== ======== ======== ======== ======== ======== ========
+            entropy_loss = self.lambda_entropy * self._compute_entropy_regularization(correction_model, x_sim_processed)
 
+        # Total RVNP Loss
+        total_loss = variational_loss + shrinkage_loss + entropy_loss
 
-        # ======== Term 5: Variational Loss ========
-        # Variational loss using either MMD or KL divergence
-        variational_loss = 0.0
-        if self.use_variational and not train_posterior_only:
-            key_variational, key = jax.random.split(key)
-            
-            if self.use_mmd_divergence:
-                # Use MMD divergence with training data (direct approach)
-                variational_loss = self.lambda_mmd * self._mmd_divergence_direct(
-                    correction_model, x_sim, theta, x_obs_processed, key_variational,
-                    n_corrected_samples=self.mmd_n_corrected_samples,
-                    use_median_heuristic=self.use_median_heuristic
-                )
-            else:
-                # Use original KL divergence
-                reverse=False #use reverse kl divergence
-                variational_loss =self.lambda_variational*self._kl_divergence(
-                    correction_model, simulator_flow, flow,reverse, x_obs_processed, key_variational,
-                    n_samples=self.simulator_samples_per_theta,kl_weight=self.lambda_kl,prior_log=self.prior.log_prob     
-                )
-
-
-        # ======== ======== ======== ======== ======== ======== ========
-        # ========              LOSS RETURN TERMS               ========
-        # ======== ======== ======== ======== ======== ======== ========
-
-        # ======== Simple Loss Function Computation ========
-        total_loss = 0.0
-        if train_correction_only:
-            # Stage: Train only correction model (freeze posterior)
-            total_loss +=  variational_loss +  entropy_loss + shrinkage_loss
-            
-        elif train_posterior_only:
-            # Stage: Train only posterior (freeze correction)
-            total_loss += posterior_nll + consistency_loss
-            
-        else:
-            # Default: Joint training (both posterior and correction)
-            total_loss += posterior_nll + variational_loss +  entropy_loss +  consistency_loss + shrinkage_loss
-        # Store loss components for logging (can't return them due to JIT)
-        # The training loop will compute these separately for logging
         return total_loss
 
 
-
-    @eqx.filter_jit
-    def _compute_consistency_regularization(
-        self,
-        flow,
-        theta_batch: Array,     # (32,obs_shape, theta_dim)
-        x_obs_sampled: Array,   # (obs_shape, x_dim)
-        key: PRNGKeyArray
-    ) -> Float[Array, ""]:
-        """
-        Compute bijection-based contrastive loss using all theta values.        
-        Args:
-            flow: Posterior flow q_φ(θ|x_obs) with bijection
-            theta_batch: All theta parameter values (batch_size, theta_dim)
-            x_obs_samples: Noisy samples from correction model (batch_size, K_obs_samples, x_dim)
-            key: Random key
-            
-        Returns:
-            Bijection-based contrastive learning loss
-        """
-
-        batch_size, K_obs_samples, x_dim = x_obs_sampled.shape
-        flow_bijection = flow.bijection.inverse 
-        
-        # Flatten to get all (theta, x) pairs
-        theta_expanded = jnp.repeat(theta_batch, K_obs_samples, axis=0)  # (batch_size * K_obs_samples, theta_dim)
-        x_obs_flat = x_obs_sampled.reshape(-1, x_dim)  # (batch_size * K_obs_samples, x_dim)
-
-        # Map all (theta, x) pairs to latent space
-        def map_pair_to_latent(theta_single, x_obs_single):
-            return flow_bijection(theta_single, condition=x_obs_single)
-        
-        latent_reps = vmap(map_pair_to_latent)(theta_expanded, x_obs_flat)  # (batch_size * K_obs_samples, latent_dim)
-        
-        # Reshape back to group by theta
-        latent_reps_grouped = latent_reps.reshape(batch_size, K_obs_samples, -1)  # (batch_size, K_obs_samples, latent_dim)
-        
-        # Contrastive loss: positive pairs from same theta should be close
-        def compute_contrastive_loss_for_theta(latent_group):
-            """Compute contrastive loss for one theta's K samples."""
-            # latent_group: (K_obs_samples, latent_dim)
-            
-            # All pairs within this group are positive pairs (same theta)
-            # Minimize pairwise distances within group
-            pairwise_dists = jnp.sum((latent_group[:, None, :] - latent_group[None, :, :])**2, axis=-1)  # (K, K)
-            
-            # Average distance between all pairs (excluding diagonal)
-            mask = 1 - jnp.eye(K_obs_samples)
-            positive_loss = jnp.sum(pairwise_dists * mask) / jnp.sum(mask)
-            
-            return positive_loss
-        
-        # Compute positive pair losses for all theta groups
-        positive_losses = vmap(compute_contrastive_loss_for_theta)(latent_reps_grouped)  # (batch_size,)
-        
-        # Negative pairs: samples from different theta should be far apart
-        # Vectorized computation of cross-group distances
-        def compute_negative_loss():
-            # Compute all pairwise group distances at once
-            # latent_reps_grouped: (batch_size, K_obs_samples, latent_dim)
-            
-            # Expand dimensions for broadcasting
-            groups_i = latent_reps_grouped[:, None, :, :]  # (batch_size, 1, K_obs_samples, latent_dim)
-            groups_j = latent_reps_grouped[None, :, :, :]  # (1, batch_size, K_obs_samples, latent_dim)
-            
-            # Compute all pairwise distances between all groups
-            cross_dists = jnp.sum((groups_i - groups_j)**2, axis=-1)  # (batch_size, batch_size, K_obs_samples, K_obs_samples)
-            
-            # Average over K_obs_samples dimensions
-            avg_cross_dists = jnp.mean(cross_dists, axis=(-2, -1))  # (batch_size, batch_size)
-            
-            # Only consider upper triangular (i < j pairs) to avoid double counting
-            mask = jnp.triu(jnp.ones((batch_size, batch_size)), k=1)
-            
-            # Apply margin-based loss with vectorized maximum
-            margin_losses = jnp.maximum(0.0, 1.0 - avg_cross_dists) * mask
-            
-            # Sum and normalize by number of pairs
-            total_negative_loss = jnp.sum(margin_losses)
-            num_pairs = jnp.sum(mask)
-            
-            return jnp.where(num_pairs > 0, total_negative_loss / num_pairs, 0.0)
-        
-        negative_loss = compute_negative_loss()
-        
-        # Total contrastive loss: minimize positive distances, maximize negative distances
-        total_contrastive_loss = jnp.mean(positive_losses) + negative_loss
-        
-        return total_contrastive_loss
 
     @eqx.filter_jit
     def _compute_shrinkage_prior(self, correction_model, theta_sim: Array) -> Float[Array, ""]:

@@ -3,9 +3,9 @@
 import jax
 import jax.numpy as jnp
 import os
-import datasets
-import normalizing_flow
-from training_utils import ExperimentConfig, TrainingLogger, validate_config, format_experiment_name
+from . import datasets
+from . import normalizing_flow
+from .training_utils import ExperimentConfig, TrainingLogger, validate_config, format_experiment_name
 
 os.environ["JAX_PLATFORM_NAME"] = "gpu"
 

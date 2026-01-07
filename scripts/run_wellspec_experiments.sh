@@ -1,21 +1,18 @@
 #!/bin/bash
 ################################################################################
-# RVNP-SBI Complete Pipeline for Google Colab
+# RVNP-SBI Well-Specified Experiments Pipeline
 #
-# This script runs the complete experimental pipeline:
-# 1. Training all models
-# 2. Evaluation (with and without SIR)
-# 3. Metrics collection
-# 4. Publication plots generation
+# Runs experiments with well-specified simulator (no model misspecification).
+# This script is identical to run_experiments_colab.sh but uses wellspec configs.
 #
 # Designed to be resumable - if Colab times out, simply re-run this script
 # and it will continue from where it left off.
 #
 # Usage:
-#   bash run_experiments_colab.sh                    # Run complete pipeline
-#   bash run_experiments_colab.sh --task=CS          # Run only CS task
-#   bash run_experiments_colab.sh --status           # Check progress
-#   bash run_experiments_colab.sh --plots-only       # Only generate plots
+#   bash run_wellspec_experiments.sh                    # Run complete pipeline
+#   bash run_wellspec_experiments.sh --task=CS          # Run only CS task
+#   bash run_wellspec_experiments.sh --status           # Check progress
+#   bash run_wellspec_experiments.sh --plots-only       # Only generate plots
 #
 ################################################################################
 
@@ -39,8 +36,8 @@ PLOTS_ONLY=false
 NO_SIR=false
 SKIP_TRAINING=false
 SKIP_EVALUATION=false
-RESULTS_DIR="experiment_results"
-PLOTS_DIR="publication_plots"
+RESULTS_DIR="experiment_results_wellspec"
+PLOTS_DIR="publication_plots_wellspec"
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -80,6 +77,8 @@ while [[ $# -gt 0 ]]; do
         -h|--help)
             echo "Usage: $0 [OPTIONS]"
             echo ""
+            echo "Well-Specified Experiments (No Model Misspecification)"
+            echo ""
             echo "Pipeline Options:"
             echo "  --task=TASK          Filter by task (CS, SIR, Pendulum, Spectra)"
             echo "  --method=METHOD      Filter by method (RVNP-simple, RVNP-NN, NPE)"
@@ -94,10 +93,10 @@ while [[ $# -gt 0 ]]; do
             echo "  -h, --help           Show this help message"
             echo ""
             echo "Examples:"
-            echo "  bash run_experiments_colab.sh"
-            echo "  bash run_experiments_colab.sh --task=CS --method=RVNP-NN"
-            echo "  bash run_experiments_colab.sh --status"
-            echo "  bash run_experiments_colab.sh --plots-only"
+            echo "  bash run_wellspec_experiments.sh"
+            echo "  bash run_wellspec_experiments.sh --task=CS --method=RVNP-NN"
+            echo "  bash run_wellspec_experiments.sh --status"
+            echo "  bash run_wellspec_experiments.sh --plots-only"
             exit 0
             ;;
         *)
@@ -110,7 +109,7 @@ done
 
 # Print header
 echo -e "${CYAN}================================================================================${NC}"
-echo -e "${CYAN}                    RVNP-SBI ICML 2026 Experiment Pipeline${NC}"
+echo -e "${CYAN}              RVNP-SBI Well-Specified Experiments Pipeline${NC}"
 echo -e "${CYAN}                      Resumable for Google Colab${NC}"
 echo -e "${CYAN}================================================================================${NC}"
 echo ""
@@ -137,7 +136,7 @@ mkdir -p logs
 # Status check
 if [ "$STATUS_ONLY" = true ]; then
     echo -e "${BLUE}=== Pipeline Status ===${NC}"
-    python integrated_pipeline.py --status --results-dir="$RESULTS_DIR"
+    python scripts/integrated_pipeline.py --status --results-dir="$RESULTS_DIR" --wellspec
     echo ""
     echo -e "${BLUE}=== Metrics Database ===${NC}"
     if [ -f "$RESULTS_DIR/metrics_database.csv" ]; then
@@ -169,7 +168,7 @@ if [ "$PLOTS_ONLY" = true ]; then
         exit 1
     fi
 
-    python publication_plots.py \
+    python scripts/publication_plots.py \
         --metrics-db="$RESULTS_DIR/metrics_database.csv" \
         --task=all \
         --save-dir="$PLOTS_DIR"
@@ -182,6 +181,7 @@ fi
 
 # Print configuration
 echo -e "${YELLOW}Configuration:${NC}"
+echo "  Mode: Well-Specified (no model misspecification)"
 echo "  Results directory: $RESULTS_DIR"
 echo "  Plots directory: $PLOTS_DIR"
 if [ -n "$TASK" ]; then
@@ -198,8 +198,8 @@ echo "  Training: $([ "$SKIP_TRAINING" = true ] && echo "skipped" || echo "enabl
 echo "  Evaluation: $([ "$SKIP_EVALUATION" = true ] && echo "skipped" || echo "enabled")"
 echo ""
 
-# Build command
-CMD="python integrated_pipeline.py --results-dir=$RESULTS_DIR"
+# Build command (includes --wellspec flag)
+CMD="python scripts/integrated_pipeline.py --results-dir=$RESULTS_DIR --wellspec"
 
 if [ -n "$TASK" ]; then
     CMD="$CMD --task=$TASK"
@@ -266,7 +266,7 @@ if [ -f "$RESULTS_DIR/metrics_database.csv" ]; then
         echo "Found $NUM_METRICS metric entries"
         echo ""
 
-        python publication_plots.py \
+        python scripts/publication_plots.py \
             --metrics-db="$RESULTS_DIR/metrics_database.csv" \
             --task=all \
             --save-dir="$PLOTS_DIR" \
@@ -296,13 +296,13 @@ echo -e "${CYAN}                              Next Steps${NC}"
 echo -e "${CYAN}================================================================================${NC}"
 echo ""
 echo "1. Check progress:"
-echo "   bash run_experiments_colab.sh --status"
+echo "   bash run_wellspec_experiments.sh --status"
 echo ""
 echo "2. Continue if interrupted:"
-echo "   bash run_experiments_colab.sh"
+echo "   bash run_wellspec_experiments.sh"
 echo ""
 echo "3. Generate/update plots:"
-echo "   bash run_experiments_colab.sh --plots-only"
+echo "   bash run_wellspec_experiments.sh --plots-only"
 echo ""
 echo "4. Results are saved in:"
 echo "   - Metrics: $RESULTS_DIR/metrics_database.csv"

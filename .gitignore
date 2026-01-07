@@ -22,3 +22,4 @@ dist/
 /Data
 /output
 /eval*.pdf
+.claude/

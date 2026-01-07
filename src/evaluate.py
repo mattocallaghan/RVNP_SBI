@@ -32,8 +32,8 @@ os.environ["JAX_ENABLE_X64"] = "True"
 jax.config.update('jax_enable_x64', True)
 
 # Import project modules
-from normalizing_flow import get_flow
-from training_utils import ExperimentConfig, TrainingLogger
+from .normalizing_flow import get_flow
+from .training_utils import ExperimentConfig, TrainingLogger
 
 
 class Evaluator:

@@ -5,7 +5,7 @@ import numpy as np
 import pickle
 import jax.numpy as jnp
 from jax import random
-from utils import CS,SIR
+from .utils import CS,SIR
 from typing import Tuple, Optional
 
 
