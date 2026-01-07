@@ -32,11 +32,11 @@ This codebase implements several simulation-based inference algorithms for robus
 If you use this code in your research, please cite:
 
 ```bibtex
-@article{ocallaghan2026robust,
-  title={Robust amortised simulation-based inference under model misspecification using variational inference},
-  author={O'Callaghan, M and others},
-  journal={ICML},
-  year={2026}
+@article{o2025robust,
+  title={Robust variational neural posterior estimation for simulation-based inference},
+  author={O'Callaghan, Matthew and Mandel, Kaisey S and Gilmore, Gerry},
+  journal={arXiv preprint arXiv:2509.05724},
+  year={2025}
 }
 ```
 
