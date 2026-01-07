@@ -109,52 +109,82 @@ RVNP jointly trains the posterior :math:`q_\phi(\theta|\hat{x})` and correction 
 
 .. math::
 
-    \mathcal{L}(\phi,\psi) = -\mathbb{E}_\theta \mathbb{E}_{x \sim p_{\text{sim}}(x|\theta)} \mathbb{E}_{\hat{x}_1,\ldots,\hat{x}_K \sim r_\psi(\hat{x}|x,\theta)} \left[\frac{1}{K}\sum_{k=1}^K \log q_\phi(\theta|\hat{x}_k)\right]
-    + \lambda_{\text{KL}} \cdot \text{KL}(r_\psi(\hat{x}|x,\theta) \| p_{\text{sim}}(x|\theta))
-    + \lambda_{\text{shrinkage}} \cdot \mathcal{R}_{\text{shrink}}(\psi)
+    \mathcal{L}(\phi,\psi) = -\text{ELBO}(\phi,\psi) + \lambda_{\text{shrinkage}} \cdot \mathcal{R}_{\text{shrink}}(\psi)
 
-where :math:`K` is the number of importance samples (``K_obs_samples`` in config, typically 30).
+where the ELBO is computed using importance weighting and the shrinkage regularizes the correction model.
 
-**Loss Components**:
+**Loss Computation** (all inside ``_kl_divergence`` method):
 
-1. **Importance-Weighted Posterior NLL** (first term):
+Given observed data :math:`x_{\text{obs}}`:
 
-   - Uses :math:`K` samples from correction model :math:`r_\psi(\hat{x}|x,\theta)` per :math:`(\theta, x)` pair
-   - Computes average log probability: :math:`\frac{1}{K}\sum_{k=1}^K \log q_\phi(\theta|\hat{x}_k)`
-   - Provides tighter variational bound than single-sample ELBO
-   - Averaged over :math:`\theta` and simulator outputs :math:`x`
-
-2. **KL Divergence** (second term):
-
-   - Prevents correction from deviating too far from simulator
-   - Ensures corrected distribution remains plausible
-   - Weighted by :math:`\lambda_{\text{KL}}`
-
-3. **Shrinkage Prior** (third term):
+1. **Sample** :math:`\theta \sim q_\phi(\theta|x_{\text{obs}})` from current posterior
+2. **Sample** :math:`x_{\text{sim}} \sim p_{\text{sim}}(x|\theta)` from trained simulator
+3. **Compute IW-ELBO**:
 
    .. math::
 
-       \mathcal{R}_{\text{shrink}}(\psi) = \mathbb{E}_\theta[\|\mu_\theta(\theta)\|^2]
+       \text{ELBO} = \mathbb{E}_{\theta \sim q_\phi(\theta|x_{\text{obs}})} \left[ \text{logsumexp}_{x_{\text{sim}}} \log r_\psi(x_{\text{obs}}|x_{\text{sim}},\theta) \right]
 
+   - Uses multiple samples per :math:`\theta` for importance weighting
+   - Evaluates correction model's ability to map simulator outputs to observations
+
+4. **Compute Shrinkage Prior**:
+
+   .. math::
+
+       \mathcal{R}_{\text{shrink}}(\psi) = \mathbb{E}_{\theta \sim q_\phi(\theta|x_{\text{obs}})}[\|\mu_\theta(\theta)\|^2]
+
+   - Uses the SAME :math:`\theta` samples from step 1
    - Regularizes neural mean shift toward zero
    - Prevents overfitting when mean misspecification is minimal
    - Weighted by :math:`\lambda_{\text{shrinkage}}`
    - **Important**: Only penalizes the mean neural network output, NOT the covariance
 
+5. **Return**: :math:`-\text{ELBO} + \lambda_{\text{shrinkage}} \cdot \mathcal{R}_{\text{shrink}}(\psi)`
+
 Multi-Stage Training
 ~~~~~~~~~~~~~~~~~~~~
 
-RVNP uses a multi-stage training pipeline:
+RVNP uses a 3-stage training pipeline:
 
-**Stage 1**: Train embedding networks (if high-dimensional observations)
+**Stage 1: Embedding Training** (optional, for high-dimensional observations)
 
-**Stage 2**: Train simulator flow :math:`p_{\text{sim}}(x|\theta)` via maximum likelihood
+- **Data**: Pre-generated simulations :math:`(\\theta, x) \sim p(\\theta)p_{\\text{sim}}(x|\\theta)`
+- **Trains**: Embedding network :math:`f_\\omega(x)`, discriminator, decoder
+- **Method**: InfoMax (mutual information maximization)
+- **Output**: Trained :math:`f_\\omega` that compresses high-dimensional :math:`x` to low-dimensional embeddings
 
-**Stage 3**: Initialize posterior :math:`q_\phi(\theta|x)` (optional)
+**Stage 2: Simulator Flow Training**
 
-**Stage 4**: Joint training of :math:`q_\phi` and :math:`r_\psi` using full loss
+- **Data**: Pre-generated simulations :math:`(\\theta, x) \sim p(\\theta)p_{\\text{sim}}(x|\\theta)`
+- **Trains**: Simulator flow :math:`p_{\\text{sim}}(x|\\theta)`
+- **Method**: Maximum likelihood on simulated data
+- **Output**: Trained simulator that generates :math:`x \sim p_{\\text{sim}}(x|\\theta)` for any :math:`\\theta`
 
-This staged approach ensures stable learning and prevents collapse.
+**Stage 3: Joint Posterior + Correction Training**
+
+- **Data**: ONLY observed data :math:`x_{\\text{obs}}` (no pre-generated simulations used)
+- **Trains**: Posterior :math:`q_\\phi(\\theta|\hat{x})` and correction :math:`r_\\psi(\hat{x}|x,\\theta)` jointly
+- **Method**: RVNP Loss (importance-weighted ELBO + shrinkage regularization)
+- **Training Loop**:
+
+  * Pass :math:`x_{\\text{obs}}` to RVNPLoss function
+  * ALL sampling happens inside ``_kl_divergence`` method:
+
+    1. Sample :math:`\\theta \sim q_\\phi(\\theta|x_{\\text{obs}})` from current posterior
+    2. Sample :math:`x_{\\text{sim}} \sim p_{\\text{sim}}(x|\\theta)` from trained simulator (Stage 2)
+    3. Compute IW-ELBO with corrected observations :math:`\hat{x} \sim r_\\psi(\hat{x}|x_{\\text{sim}},\\theta)`
+    4. Compute shrinkage regularization: :math:`\lambda_{\\text{shrinkage}} \cdot \mathbb{E}_{\\theta}[\|\mu_\\theta(\\theta)\|^2]` using sampled :math:`\\theta`
+    5. Return :math:`-\\text{ELBO} + \\text{shrinkage}`
+
+  * Update :math:`\\phi` (posterior) and :math:`\\psi` (correction) via gradient descent
+  * **Key point**: No sampling in training loop - only :math:`x_{\\text{obs}}` passed to loss
+
+This staged approach ensures:
+
+- Stable learning of complex components
+- Efficient reuse of trained simulator in Stage 3
+- No need for massive pre-generated datasets in final training stage
 
 Calibration Metrics
 -------------------

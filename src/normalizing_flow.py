@@ -153,7 +153,7 @@ class Rational_Quadratic_Spline_w_posterior(Normalizing_Flow):
             nn_width=self.nn_block_dim,
             invert=False
         )
-        
+        ###############################
         ############# Embedding (only if needed)
         ###############################
         self.key, subkey = jr.split(self.key)
@@ -312,43 +312,48 @@ class Rational_Quadratic_Spline_w_posterior(Normalizing_Flow):
         on different model components to ensure stable and effective learning.
 
         Training Stages:
-            Stage 1: Embedding networks (if applicable) - Train feature extraction networks
-                    for high-dimensional observations (e.g., spectral data).
 
-            Stage 2: Simulator flow p(x|θ) - Train the simulator emulator using maximum
-                    likelihood on simulated data. This flow is trained once and reused.
+            **Stage 1**: Embedding networks (optional, for high-dimensional data)
+                - **Data used**: train_data (pre-generated simulations)
+                - **Trains**: f_ω(x), discriminator, decoder
+                - **Method**: InfoMax (mutual information maximization)
+                - **Config**: config.model.train_embeddings
 
-            Stage 3: Posterior initialization p(θ|x_obs) - Initialize the posterior flow
-                    using standard maximum likelihood (if enabled).
+            **Stage 2**: Simulator flow p(x|θ)
+                - **Data used**: train_data (pre-generated (θ, x) pairs)
+                - **Trains**: Simulator flow p(x|θ)
+                - **Method**: Maximum likelihood
+                - **Config**: config.model.train_simulator
 
-            Stage 4: Joint training - Simultaneously train both the posterior flow q_φ(θ|x̂)
-                    and correction model r_ψ(x̂|x,θ) using the variational objective.
+            **Stage 3**: Joint posterior + correction
+                - **Data used**: ONLY inference_data (observed x_obs)
+                - **Trains**: Posterior q_φ(θ|x̂) and correction r_ψ(x̂|x,θ)
+                - **Method**: RVNP Loss (samples θ ~ q_φ(θ|x_obs) and x_sim ~ p(x|θ) on-the-fly)
+                - **NO pre-generated training data used in this stage**
 
         Args:
             key: JAX random key for reproducibility
-            train_data: Training dataset dictionary containing:
-                - 'theta': Parameter samples (num_samples, theta_dim)
-                - 'x': Corresponding observations (num_samples, obs_dim)
-            inference_data: Inference dataset dictionary containing:
-                - 'x_obs': Observed data for posterior inference
+            train_data: Pre-generated simulations (θ, x) ~ p(θ)p(x|θ)
+                - **Used in**: Stages 1 and 2 only
+                - **NOT used in**: Stage 3 (joint training)
+            inference_data: Observed data x_obs
+                - **Used in**: Stage 3 (joint training)
 
         Returns:
             Updated JAX random key
 
         Notes:
-            - Each stage can be enabled/disabled via config flags:
-                * config.model.train_embeddings (Stage 1)
-                * config.model.train_simulator (Stage 2)
-                * config.model.train_posterior_init (Stage 3)
-            - The simulator flow is trained only once but reused by all other components
-            - Config flags control training epochs: warmup_epochs, final_epochs
+            - Stages 1-2 use pre-generated train_data to learn simulator and embeddings
+            - Stage 3 uses ONLY inference_data and samples fresh (θ, x_sim) each iteration
+            - Config flags: train_embeddings (Stage 1), train_simulator (Stage 2)
+            - Epochs: warmup_epochs (Stages 1-2), final_epochs (Stage 3)
 
         Example:
             >>> key = jax.random.PRNGKey(0)
             >>> model = RANPT(config)
             >>> key = model.train_staged(key, train_data, inference_data)
         """
-        print("Starting 4-stage training system...")
+        print("Starting 3-stage training system...")
         # Stage 1: Embedding (handled separately in train() method)
         if getattr(self.config.model, 'train_embeddings', True):
             print("Stage 1: Training embedding networks...")
@@ -362,16 +367,9 @@ class Rational_Quadratic_Spline_w_posterior(Normalizing_Flow):
         print("Stage 2: Training simulator flow...")
         key, subkey = jr.split(key)
         key, self.simulator_flow = self.train_simulator(subkey, self.simulator_flow, train_data)
-        
-        # Stage 3: Initialize posterior p_φ(θ|x_obs) if enabled
-        if getattr(self.config.model, 'train_posterior_init', False):
-            print("Stage 3: Posterior initialization...")
-            if getattr(self.config.training, 'use_initialization', True):
-                key, subkey = jr.split(key)
-                key,self.flow=self.initialize_posterior_flow(key,self.flow,train_data)
-        
-        # Stage 4: Joint training
-        print("Stage 4: Joint training")
+
+        # Stage 3: Joint training
+        print("Stage 3: Joint training")
         key, subkey = jr.split(key)
         key,self.flow,self.correction_model = self.train_single_stage(subkey, 'joint',self.flow,self.correction_model, train_data, inference_data)
 
@@ -379,43 +377,30 @@ class Rational_Quadratic_Spline_w_posterior(Normalizing_Flow):
         return key
     
     
-    def train_single_stage(self, key, stage_name,flow,correction_model, train_data, inference_data, max_epochs=None):
-        """Train joint posterior and correction model.
+    def train_single_stage(self, key, stage_name, flow, correction_model, train_data, inference_data, max_epochs=None):
+        """Train posterior and correction jointly (Stage 3).
 
-        Trains both the posterior flow and correction model jointly using RVNPLoss.
+        This is a wrapper around train_posterior() that implements Stage 3 of RVNP.
 
         Args:
-            key: JAX random key for stochastic operations
-            stage_name: Name of the training stage (currently only 'joint' is used)
-            flow: Current posterior flow q_φ(θ|x) to be trained
-            correction_model: Current correction model r_ψ(x̂|x,θ) to be trained
-            train_data: Training dataset dictionary containing:
-                - 'theta': Parameter samples (num_samples, theta_dim)
-                - 'x': Corresponding observations (num_samples, obs_dim)
-            inference_data: Inference dataset dictionary containing:
-                - 'x_obs': Observed data for posterior inference
-            max_epochs: Maximum training epochs (overrides config.training.final_epochs).
-                       If None, uses config value. Default: None.
+            key: JAX random key
+            stage_name: Must be 'joint' (only joint training supported)
+            flow: Posterior flow q_φ(θ|x̂) to train
+            correction_model: Correction model r_ψ(x̂|x,θ) to train
+            train_data: NOT USED IN STAGE 3 (kept for API compatibility with Stages 1-2)
+            inference_data: Observed data x_obs for training
+            max_epochs: Max training epochs (uses config.training.final_epochs if None)
 
         Returns:
-            Tuple of (key, flow, correction_model):
-                - key: Updated JAX random key
-                - flow: Trained posterior flow
-                - correction_model: Trained correction model
+            Tuple of (key, trained_flow, trained_correction_model)
 
         Notes:
-            - Uses RVNPLoss for joint training of posterior and correction
-            - Training epochs controlled by config.training.final_epochs
-            - Early stopping patience controlled by config.training.max_patience
+            - Stage 3 uses ONLY inference_data (observed x_obs)
+            - train_data parameter is ignored (not used in this stage)
+            - Samples θ ~ q_φ(θ|x_obs) and x_sim ~ p(x|θ) on-the-fly
 
         Raises:
             ValueError: If stage_name is not 'joint'
-
-        Example:
-            >>> key = jax.random.PRNGKey(0)
-            >>> key, flow, corr = model.train_single_stage(
-            ...     key, 'joint', flow, correction_model, train_data, inference_data
-            ... )
         """
         max_epochs = getattr(self.config.training, 'final_epochs', self.config.training.n_iters)
         train_data_prepared = train_data
@@ -427,19 +412,17 @@ class Rational_Quadratic_Spline_w_posterior(Normalizing_Flow):
 
         # Joint training using RVNPLoss
         print("Training using RVNPLoss (joint training)...")
+        print(f"Using only observed data (no pre-generated training data)")
         key, subkey = jr.split(key)
-        flow, correction_model, stage_losses = self.fit_posterior_with_simplified_loss(
+        flow, correction_model, stage_losses = self.train_posterior(
             key=subkey,
             dist=flow,
             correction_model=correction_model,
             embedding_model=self.embedding,
-            x=train_data_prepared,
-            eval=eval_data_prepared,
             inference_data=inference_data,
             learning_rate=self.config.optim.lr,
             max_epochs=max_epochs,
-            max_patience=self.config.training.max_patience,
-            val_prop=self.config.training.validation_split
+            max_patience=self.config.training.max_patience
         )
 
         if not hasattr(self, 'losses') or self.losses is None:
@@ -611,17 +594,52 @@ class Rational_Quadratic_Spline_w_posterior(Normalizing_Flow):
 
 
 
-    def fit_posterior_with_simplified_loss(self, key, dist, correction_model,embedding_model, x, eval, inference_data, max_epochs, max_patience, val_prop, learning_rate,
-                                         return_best=True, show_progress=True):
-        """Fit posterior flow using RVNPLoss (joint training of posterior and correction)."""
+    def train_posterior(self, key, dist, correction_model, embedding_model, inference_data, max_epochs, max_patience, learning_rate,
+                       return_best=True, show_progress=True):
+        """Train posterior q_φ(θ|x̂) and correction r_ψ(x̂|x,θ) jointly using RVNP Loss.
+
+        This is Stage 3 of RVNP training. Uses ONLY observed data (x_obs) - no pre-generated
+        simulations. ALL sampling happens inside the loss function (_kl_divergence):
+
+        Training Loop:
+        1. Pass x_obs to RVNPLoss
+        2. Inside _kl_divergence:
+           a. Sample θ ~ q_φ(θ|x_obs) from current posterior
+           b. Sample x_sim ~ p(x|θ) from trained simulator (Stage 2)
+           c. Compute IW-ELBO with corrected observations x̂ ~ r_ψ(x̂|x_sim, θ)
+           d. Compute shrinkage prior: λ * E_θ[||μ_θ(θ)||²] using sampled θ
+           e. Return -ELBO + shrinkage
+        3. Update both posterior φ and correction ψ via gradient descent
+
+        Args:
+            key: JAX random key
+            dist: Current posterior flow q_φ(θ|x̂) to train
+            correction_model: Current correction model r_ψ(x̂|x,θ) to train
+            embedding_model: Pre-trained embedding f_ω(x) (optional, for high-D data)
+            inference_data: Observed data x_obs, shape (n_obs, obs_dim)
+            max_epochs: Maximum training epochs
+            max_patience: Early stopping patience
+            learning_rate: Learning rate for optimizer
+            return_best: Return best params based on validation loss (default: True)
+            show_progress: Show progress bar (default: True)
+
+        Returns:
+            Tuple of (trained_flow, trained_correction_model, losses_dict)
+
+        Notes:
+            - No pre-generated (θ, x) pairs used - all sampling done inside loss function
+            - No sampling in training loop - only x_obs passed to loss
+            - Validation is stochastic (uses different random seeds on same x_obs)
+            - Memory efficient: no need to store massive training datasets
+            - Theoretically sound: θ sampled from q_φ(θ|x_obs) relevant to observed data
+        """
         workspace_dir = str(self.config.training.workspace)+'/Tensorboard'
         if not os.path.exists(workspace_dir):
             os.makedirs(workspace_dir)
         summary_writer = create_file_writer(workspace_dir)
         optimizer = get_optimizer(self.config)
-        
+
         # Initialize RVNPLoss with config parameters
-        # Use override consistency weight for final stage if provided
         loss_fn = RVNPLoss(
             lambda_variational=self.config.model.lambda_variational,
             lambda_kl=getattr(self.config.model, 'lambda_kl', 1.0),
@@ -656,25 +674,29 @@ class Rational_Quadratic_Spline_w_posterior(Normalizing_Flow):
                 is_leaf=lambda leaf: isinstance(leaf, paramax.NonTrainable),
             )
         else:
-            params_embedding, static_embedding,embedding_stats = None, None, None
-        
-        # Prepare inference observations once and batch into groups of batch_size_obs
-        inference_batch = inference_data.reshape(-1, inference_data.shape[-1])
-        x_obs_inference = inference_batch[..., self.config.model.flow_dimension:]  # Real observations
+            params_embedding, static_embedding, embedding_stats = None, None, None
 
-        # Batch observed data into groups of batch_size_obs
-        batch_size_obs = 200
+        # Prepare observed data (inference_data contains only x_obs, no theta)
+        # Shape: (n_obs, obs_dim)
+        inference_batch = inference_data.reshape(-1, inference_data.shape[-1])
+        # If inference_data contains both theta and x, extract only x
+        if inference_batch.shape[-1] > self.config.data.vector_dim:
+            x_obs_inference = inference_batch[..., self.flow_dimension:]
+        else:
+            x_obs_inference = inference_batch
+
+        # Batch observed data
+        batch_size_obs = getattr(self.config.training, 'batch_size_obs', 200)
         x_obs_batches = []
         for i in range(0, x_obs_inference.shape[0], batch_size_obs):
             x_obs_batches.append(x_obs_inference[i:i+batch_size_obs])
-        
+
         @eqx.filter_jit
-        def step(params_flow, params_correction, batch, x_obs, opt_state, key_step):
-            """Perform a single training step with RVNPLoss."""
-            # Extract θ and x_sim from training batch  
-            theta = batch[..., :self.config.model.flow_dimension]
-            x_sim = batch[..., self.config.model.flow_dimension:]
-            
+        def step(params_flow, params_correction, x_obs, opt_state, key_step):
+            """Perform a single training step with RVNPLoss.
+
+            All sampling (θ and x_sim) happens inside the loss function.
+            """
             # Compute loss and gradients
             def loss_wrapper(pf, pc):
                 return loss_fn(
@@ -685,17 +707,15 @@ class Rational_Quadratic_Spline_w_posterior(Normalizing_Flow):
                     params_correction=pc,
                     static_correction=static_correction,
                     simulator_flow=self.simulator_flow,
-                    x_sim=x_sim,
                     x_obs=x_obs,
-                    theta=theta,
                     key=key_step,
                     embedding_stats=embedding_stats
                 )
-            
+
             def combined_loss_wrapper(combined_params):
                 pf, pc = combined_params
                 return loss_wrapper(pf, pc)
-            
+
             loss_val, combined_grads = eqx.filter_value_and_grad(combined_loss_wrapper)((params_flow, params_correction))
             flow_grads, correction_grads = combined_grads
 
@@ -711,36 +731,27 @@ class Rational_Quadratic_Spline_w_posterior(Normalizing_Flow):
         best_params_correction = params_correction
         # Initialize optimizer state for joint training
         opt_state = optimizer.init((params_flow, params_correction))
-        
+
         key, subkey = jr.split(key)
         losses = {"train": [], "val": []}
-        
+
         best_val_loss = float('inf')
         patience_counter = 0
-        
-        # Initialize observed batch cycling counter
-        obs_batch_idx = 0
-        
-        loop_epoch = tqdm(range(max_epochs), disable=not show_progress, desc="Simplified Loss Training")
+
+        loop_epoch = tqdm(range(max_epochs), disable=not show_progress, desc="RVNP Training")
         for epoch in loop_epoch:
             train_losses = []
-            
-            for batch_data in x:
-                batch = batch_data
-                key, subkey = jr.split(key)
-                
-                # Cycle through observed data batches
-                current_x_obs_batch = x_obs_batches[obs_batch_idx % len(x_obs_batches)]
-                
-                params_flow, params_correction, opt_state, train_loss = step(
-                    params_flow, params_correction, batch, current_x_obs_batch, opt_state, subkey)
-                train_losses.append(train_loss)
-                
-                # Increment observed batch index for next training step
-                obs_batch_idx += 1
 
-            # Compute full-batch training loss
-            avg_train_loss = sum(train_losses) / len(train_losses)
+            # Iterate over batches of observed data only
+            for x_obs_batch in x_obs_batches:
+                key, subkey = jr.split(key)
+
+                params_flow, params_correction, opt_state, train_loss = step(
+                    params_flow, params_correction, x_obs_batch, opt_state, subkey)
+                train_losses.append(train_loss)
+
+            # Compute average training loss
+            avg_train_loss = sum(train_losses) / len(train_losses) if train_losses else float('inf')
             losses["train"].append(avg_train_loss)
             
             # Monitor correction model covariance matrix and loss components
@@ -774,17 +785,9 @@ class Rational_Quadratic_Spline_w_posterior(Normalizing_Flow):
                         
                 # Monitor individual loss components on a sample batch
 
-            # Compute validation loss (simplified)
+            # Compute validation loss on observed data (stochastic due to posterior sampling)
             val_losses = []
-            val_obs_batch_idx = 0
-            for val_batch_data in eval:
-                val_batch = jax.tree_util.tree_map(lambda x: jnp.array(x), val_batch_data)
-                theta_val = val_batch[..., :self.config.model.flow_dimension]
-                x_data_val = val_batch[..., self.config.model.flow_dimension:]
-                
-                # Cycle through observed data batches for validation too
-                current_val_x_obs_batch = x_obs_batches[val_obs_batch_idx % len(x_obs_batches)]
-                
+            for x_obs_val_batch in x_obs_batches:
                 key, subkey = jr.split(key)
                 val_loss = loss_fn(
                     params_flow=params_flow,
@@ -794,14 +797,11 @@ class Rational_Quadratic_Spline_w_posterior(Normalizing_Flow):
                     params_correction=params_correction,
                     static_correction=static_correction,
                     simulator_flow=self.simulator_flow,
-                    x_sim=x_data_val,  # Use validation data as simulator outputs
-                    x_obs=current_val_x_obs_batch,  # Use batched inference data as real observations
-                    theta=theta_val,
+                    x_obs=x_obs_val_batch,
                     key=subkey,
                     embedding_stats=embedding_stats
                 )
                 val_losses.append(val_loss)
-                val_obs_batch_idx += 1
 
             avg_val_loss = sum(val_losses) / len(val_losses) if val_losses else float('inf')
             losses["val"].append(avg_val_loss)
@@ -832,94 +832,6 @@ class Rational_Quadratic_Spline_w_posterior(Normalizing_Flow):
         dist = eqx.combine(best_params_flow if return_best else params_flow, static_flow)
         summary_writer.close()
         return dist, correction_model, losses
-
-    def initialize_posterior_flow(self,key,flow,train_data):
-        """
-        Initialize the posterior flow by training on q(θ|x_sim) for a few epochs.
-        This provides a good starting point before joint training with correction model.
-        """
-        print("Initializing posterior flow with q(θ|x_sim)...")
-        key,subkey=jr.split(key)
-        # Use standard maximum likelihood loss for initialization
-        init_loss_fn = MaximumLikelihoodLoss()
-        # Get initialization parameters from config
-        init_epochs = getattr(self.config.training, 'init_epochs', 10)  # Default 10 epochs
-        # Separate flow parameters
-        params_flow, static_flow = eqx.partition(
-            flow,
-            eqx.is_inexact_array,
-            is_leaf=lambda leaf: isinstance(leaf, paramax.NonTrainable),
-        )
-        # Initialize optimizer for flow only
-        optimizer = self.optimizer_flow
-        opt_state = optimizer.init(params_flow)
-        # Handle embedding if needed
-        if self.use_embeddings:
-            # We need embedding parameters for processing data
-            params_embedding, static_embedding = eqx.partition(
-                self.embedding,
-                eqx.is_inexact_array,
-                is_leaf=lambda leaf: isinstance(leaf, paramax.NonTrainable),
-            )
-            embedding = paramax.unwrap(eqx.combine(params_embedding, static_embedding))
-            p_embedding = lambda x, k: embedding(x, key=k, inference=True)
-            
-            # Load embedding stats
-            with open(self.file_name_embedding_stats, 'rb') as f:
-                embedding_stats = pickle.load(f)
-        
-        @eqx.filter_jit
-        def init_step(params, batch, opt_state, key):
-            """Single initialization training step"""
-            # Extract θ and x from batch
-            theta = batch[..., :self.config.model.flow_dimension]  # Parameters
-            x_sim = batch[..., self.config.model.flow_dimension:]  # Simulator outputs
-            
-            if self.use_embeddings:
-                # Process through embedding
-                batch_size = x_sim.shape[0]
-                keys = jax.random.split(key, batch_size)
-                x_processed = jax.lax.stop_gradient(
-                    jax.vmap(p_embedding)(x_sim[:, jnp.newaxis, :], keys)
-                )
-                x_processed = (x_processed - embedding_stats['mean']) / embedding_stats['std']
-            else:
-                x_processed = x_sim
-            
-            # Compute standard maximum likelihood loss: -log p(θ|x_sim)
-            loss_val, grads = eqx.filter_value_and_grad(init_loss_fn)(
-                params, static_flow, theta, x_processed, None
-            )
-            
-            # Update parameters
-            updates, opt_state = optimizer.update(grads, opt_state, params)
-            params = eqx.apply_updates(params, updates)
-            
-            return params, opt_state, loss_val
-        
-        # Training loop
-        best_params = params_flow
-        best_loss = float('inf')
-        key, subkey = jr.split(self.key)
-        print(f"Running {init_epochs} initialization epochs...")
-        for epoch in tqdm(range(init_epochs), desc="Initializing Posterior"):
-            epoch_losses = []
-            for batch_data in train_data:
-                batch = batch_data
-                key, subkey = jr.split(key)
-                params_flow, opt_state, loss_val = init_step(params_flow, batch, opt_state, subkey)
-                epoch_losses.append(loss_val)
-            avg_loss = sum(epoch_losses) / len(epoch_losses)
-            if avg_loss < best_loss:
-                best_loss = avg_loss
-                best_params = params_flow
-            
-            if epoch % 20 == 0:
-                print(f"Init Epoch {epoch}, Loss: {avg_loss:.4f}")
-        
-        # Update flow with initialized parameters
-        flow = eqx.combine(best_params, static_flow)
-        return key,flow
 
     def train_embedding_networks(self,key,train_data,inference_data):
         """
@@ -1178,26 +1090,21 @@ class NNPE_Spike_Slab(Normalizing_Flow):
             nn_width=self.nn_block_dim,
             invert=False
         )
-        
-        # Initialize embedding components (will be loaded)
+
+        # Initialize embedding components using factory function
         if self.use_embeddings:
             self.key, subkey = jr.split(self.key)
-            embedding_type = config.model.embedding
-            if config.data.dataset == 'spectra':
-                self.embedding = StatisticEmbedding_spectra(
-                    key=subkey, in_channels=1, how=embedding_type,
-                    hidden_scale=config.model.hidden_scale, z_dim=self.embedding_dim, dropout_rate=0.1
-                )
-            else:
-                self.embedding = StatisticEmbedding_pendulum(
-                    key=subkey, in_channels=1, how=embedding_type,
-                    hidden_scale=config.model.hidden_scale, z_dim=self.embedding_dim, dropout_rate=0.1
-                )
+            self.embedding, _, _, _ = create_embedding_models(
+                key=subkey,
+                config=config,
+                embedding_dim=self.embedding_dim,
+                cond_dim=self.flow_dimension
+            )
         else:
             self.embedding = None
-            
+
         self.optimizer_flow = get_optimizer(self.config)
-        
+
         print(f"NNPE initialized with spike_scale={self.spike_scale}, slab_scale={self.slab_scale}")
     
     def add_spike_and_slab_error(self, key, x, slab_scale=None, spike_scale=None):
@@ -1430,26 +1337,21 @@ class NPE(Normalizing_Flow):
             nn_width=self.nn_block_dim,
             invert=False
         )
-        
-        # Initialize embedding components (will be loaded)
+
+        # Initialize embedding components using factory function
         if self.use_embeddings:
             self.key, subkey = jr.split(self.key)
-            embedding_type = config.model.embedding
-            if config.data.dataset == 'spectra':
-                self.embedding = StatisticEmbedding_spectra(
-                    key=subkey, in_channels=1, how=embedding_type,
-                    hidden_scale=config.model.hidden_scale, z_dim=self.embedding_dim, dropout_rate=0.1
-                )
-            else:
-                self.embedding = StatisticEmbedding_pendulum(
-                    key=subkey, in_channels=1, how=embedding_type,
-                    hidden_scale=config.model.hidden_scale, z_dim=self.embedding_dim, dropout_rate=0.1
-                )
+            self.embedding, _, _, _ = create_embedding_models(
+                key=subkey,
+                config=config,
+                embedding_dim=self.embedding_dim,
+                cond_dim=self.flow_dimension
+            )
         else:
             self.embedding = None
-            
+
         self.optimizer_flow = get_optimizer(self.config)
-        
+
         print(f"NPE initialized for standard neural posterior estimation")
     
     def build(self, train_data=None, eval_data=None, inference_data=None, mean=None, std=None):

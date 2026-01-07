@@ -219,34 +219,28 @@ class RVNPLoss:
         params_correction: eqx.Module,
         static_correction: eqx.Module,
         simulator_flow: AbstractDistribution,  # Complete simulator flow (not params/static)
-        x_sim: Array,
         x_obs: Array,
-        theta: Array,
         key: PRNGKeyArray,
         embedding_stats: dict = None,
     ) -> Float[Array, ""]:
-        """Compute RVNP loss: importance-weighted variational objective with regularization.
+        """Compute RVNP loss: importance-weighted variational objective with shrinkage regularization.
 
-        Implements the RVNP loss function with three components:
-
-        1. **Importance-Weighted ELBO** (via _kl_divergence)
-        2. **Shrinkage Prior** (on mean neural network)
-        3. **Entropy Regularization** (for full-rank covariance)
+        Implements the RVNP loss function that combines:
+        - Importance-Weighted ELBO (via _kl_divergence)
+        - Shrinkage Prior (computed internally in _kl_divergence)
 
         Mathematical Formulation:
 
             .. math::
 
-                L(\phi,\psi) = \\text{IW-ELBO} + \lambda_{shrinkage} \cdot \|\mu_\\theta(\\theta)\|^2 + \lambda_{entropy} \cdot H(r_\psi)
-
-            where IW-ELBO is computed via the _kl_divergence method.
+                L(\phi,\psi) = -\\text{ELBO} + \lambda_{shrinkage} \cdot \mathbb{E}_{\\theta \sim q_\phi(\\theta|x_{obs})}[\|\mu_\\theta(\\theta)\|^2]
 
             where:
                 - :math:`q_\phi(\\theta|\hat{x})`: Posterior flow (amortized inference)
                 - :math:`r_\psi(\hat{x}|x,\\theta)`: Correction model :math:`N(\hat{x}; \mu_\psi(x,\\theta), \Sigma_\psi(\\theta))`
                 - :math:`p_{sim}(x|\\theta)`: Simulator flow (trained separately)
-                - :math:`\\theta`: Parameters of interest
-                - :math:`x`: Simulated observation
+                - :math:`\\theta`: Parameters of interest sampled from posterior
+                - :math:`x`: Simulator output
                 - :math:`\hat{x}`: Corrected observation
 
         Args:
@@ -259,21 +253,25 @@ class RVNPLoss:
             static_correction: Static parameters of correction model
             simulator_flow: Pre-trained simulator flow :math:`p_{sim}(x|\\theta)` (complete model,
                            not split into params/static)
-            x_sim: Simulated observations from :math:`p_{sim}(x|\\theta)`, shape (batch_size, obs_dim)
-            x_obs: Observed data for inference, shape (n_obs, obs_dim)
-            theta: Parameters :math:`\\theta`, shape (batch_size, theta_dim)
+            x_obs: Observed data for inference, shape (n_obs, obs_dim).
+                   This is the ONLY data input - all sampling happens inside _kl_divergence.
             key: JAX random key for stochastic sampling
             embedding_stats: Optional dictionary with embedding statistics:
                 - 'mean': Normalization mean
                 - 'std': Normalization standard deviation
 
         Returns:
-            Scalar loss value = IW-ELBO + shrinkage + entropy
+            Scalar loss value = -ELBO + shrinkage
 
         Notes:
-            - IW-ELBO computed via _kl_divergence (importance-weighted variational objective)
-            - Shrinkage only applies to NN correction models (mean neural network)
-            - Entropy regularization encourages full-rank covariance
+            **Important**: This method does NOT take theta or x_sim as parameters.
+            All sampling occurs inside _kl_divergence:
+
+            1. Sample :math:`\\theta \sim q_\phi(\\theta|x_{obs})` from current posterior
+            2. Sample :math:`x_{sim} \sim p_{sim}(x|\\theta)` from trained simulator
+            3. Compute IW-ELBO using corrected samples :math:`\hat{x} \sim r_\psi(\hat{x}|x_{sim},\\theta)`
+            4. Compute shrinkage regularization on :math:`\mu_\\theta(\\theta)` using sampled theta
+            5. Return -ELBO + shrinkage
         """
 
         ###########
@@ -281,8 +279,6 @@ class RVNPLoss:
         # Normalizing flow (posterior)
         flow = paramax.unwrap(eqx.combine(params_flow, static_flow))
         correction_model = paramax.unwrap(eqx.combine(params_correction, static_correction))
-        # number of simulations and number of actual observations in the batch
-        batch_size = x_sim.shape[0]
         n_obs = x_obs.shape[0]
         
         # ======== ======== ======== ======== ======== ======== ========
@@ -290,12 +286,6 @@ class RVNPLoss:
         # ======== ======== ======== ======== ======== ======== ========
         if params_embedding is not None:
             embedding = paramax.unwrap(eqx.combine(params_embedding, static_embedding))
-            key_embed_sim, key = jax.random.split(key)
-            keys_sim = jax.random.split(key_embed_sim, batch_size)
-            x_sim_embedded = jax.lax.stop_gradient(
-                vmap(lambda x, k: embedding(x, key=k, inference=True))(x_sim[:, jnp.newaxis, :], keys_sim)
-            )
-            x_sim_processed = (x_sim_embedded - embedding_stats['mean']) / embedding_stats['std']
             key_embed_obs, key = jax.random.split(key)
             keys_obs = jax.random.split(key_embed_obs, n_obs)
             x_obs_embedded = jax.lax.stop_gradient(
@@ -303,34 +293,21 @@ class RVNPLoss:
             )
             x_obs_processed = (x_obs_embedded - embedding_stats['mean']) / embedding_stats['std']
         else:
-            x_sim_processed = x_sim
             x_obs_processed = x_obs
         # ======== ======== ======== ======== ======== ======== ========
-        # ========           RVNP LOSS COMPONENTS               ========
+        # ========              RVNP LOSS                       ========
         # ======== ======== ======== ======== ======== ======== ========
-
-        # Term 1: Importance-Weighted Variational Loss (IW-ELBO)
+        # Importance-Weighted ELBO with internal shrinkage regularization
+        # All sampling (θ ~ q_φ(θ|x_obs) and x_sim ~ p(x|θ)) happens inside _kl_divergence
         key_variational, key = jax.random.split(key)
         reverse = False  # Use forward KL divergence
-        variational_loss = self.lambda_variational * self._kl_divergence(
+        loss = self.lambda_variational * self._kl_divergence(
             correction_model, simulator_flow, flow, reverse, x_obs_processed, key_variational,
-            n_samples=self.simulator_samples_per_theta, kl_weight=self.lambda_kl, prior_log=self.prior.log_prob
+            n_samples=self.simulator_samples_per_theta, kl_weight=self.lambda_kl,
+            prior_log=self.prior.log_prob, lambda_shrinkage=self.lambda_shrinkage
         )
 
-        # Term 2: Shrinkage Prior (only on mean neural network)
-        shrinkage_loss = 0.0
-        if self.lambda_shrinkage > 0.0:
-            shrinkage_loss = self.lambda_shrinkage * self._compute_shrinkage_prior(correction_model, theta)
-
-        # Term 3: Entropy Regularization (full-rank covariance)
-        entropy_loss = 0.0
-        if self.lambda_entropy > 0.0:
-            entropy_loss = self.lambda_entropy * self._compute_entropy_regularization(correction_model, x_sim_processed)
-
-        # Total RVNP Loss
-        total_loss = variational_loss + shrinkage_loss + entropy_loss
-
-        return total_loss
+        return loss
 
 
 
@@ -450,33 +427,41 @@ class RVNPLoss:
         self,
         correction_model,
         simulator_flow,
-        flow,  
+        flow,
         reverse,                # Posterior flow for theta sampling
         x_obs_real: Array,     # (n_obs, dim) - real observations
         key: PRNGKeyArray,
         n_samples: int = 100 ,  # Number of samples to draw from simulator
         kl_weight: float = 1.0,  # Weight for KL term (default 1.0)
         prior_log: any = None,  # Prior distribution (if needed)
+        lambda_shrinkage: float = 0.0,  # Weight for shrinkage prior on mean correction
 
     ) -> Float[Array, ""]:
         """
-        Sample from simulator model and use soft attention to match to observations.
-        
-        Process:
-        1. Sample x_sim from simulator_flow using theta parameters  
-        2. Compute soft attention weights based on proximity to x_obs
-        3. Apply attention-weighted contrastive loss
-        
+        Compute importance-weighted ELBO with shrinkage regularization.
+
+        This method performs ALL sampling internally:
+        1. Sample θ ~ q_φ(θ|x_obs) from posterior for each observation
+        2. Sample x_sim ~ p(x|θ) from simulator for each sampled θ
+        3. Compute corrected observations x̂ ~ r_ψ(x̂|x_sim, θ)
+        4. Compute IW-ELBO: E_θ[logsumexp(log p(x_obs|x_sim, θ))]
+        5. Compute shrinkage prior: λ * E_θ[||μ_θ(θ)||²] using sampled θ
+        6. Return -ELBO + shrinkage
+
         Args:
-            correction_model: Correction model r_ψ(x̂|x_sim)
+            correction_model: Correction model r_ψ(x̂|x_sim, θ)
             simulator_flow: Trained simulator p(x|θ)
-            x_obs_real: Real observations (n_obs, dim)
-            theta: Parameters from training batch (n_sim, theta_dim)
+            flow: Posterior flow q_φ(θ|x_obs) for sampling θ
+            reverse: Whether to use reverse KL (default: False for forward KL)
+            x_obs_real: Observed data (n_obs, obs_dim)
             key: Random key for sampling
-            n_samples: Number of samples per theta (default 100)
-            
+            n_samples: Number of samples per theta (default: 100)
+            kl_weight: Weight for KL divergence term (default: 1.0)
+            prior_log: Prior log probability function
+            lambda_shrinkage: Weight for shrinkage prior on mean correction (default: 0.0)
+
         Returns:
-            Simulator sampling attention-based contrastive loss
+            Scalar loss = -ELBO + shrinkage_prior
         """
         n_obs = x_obs_real.shape[0]
                 
@@ -577,10 +562,24 @@ class RVNPLoss:
         elbo_per_obs = vmap(compute_elbo_single_obs)(
             x_obs_real, thetas_sampled, x_sim_samples, log_p_posterior,prior_logp
         )
-        
-        # Return negative IW ELBO as loss (we want to maximize ELBO, so minimize negative ELBO)
+
+        # Negative IW ELBO as loss (we want to maximize ELBO, so minimize negative ELBO)
         elbo_loss = -jnp.mean(elbo_per_obs)
-        return elbo_loss
+
+        # Compute shrinkage prior on mean correction using sampled θ ~ q_φ(θ|x_obs)
+        shrinkage_loss = 0.0
+        if lambda_shrinkage > 0.0:
+            # thetas_sampled shape: (n_obs, samples_per_theta, theta_dim)
+            # Flatten to (n_obs * samples_per_theta, theta_dim) for batch processing
+            theta_flat = thetas_sampled.reshape(-1, thetas_sampled.shape[-1])
+
+            # Compute mean shift magnitude ||μ_θ(θ)||² for each theta sample
+            mean_shift_magnitudes = vmap(correction_model.get_mean_shift_magnitude)(theta_flat)
+
+            # Average over all samples
+            shrinkage_loss = lambda_shrinkage * jnp.mean(mean_shift_magnitudes)
+
+        return elbo_loss + shrinkage_loss
 
 
     @eqx.filter_jit

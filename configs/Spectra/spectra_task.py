@@ -127,7 +127,6 @@ def get_config():
     config.model.flow_dimension=3  # Dimension of θ (parameters) - what we're learning posterior for
     
     # === STAGED TRAINING CONFIGURATION ===
-    config.model.train_posterior_init=True       # Stage 3: Initialize posterior p_φ(θ|x_obs)
     config.model.train_correction_coarse=True    # Stage 4: Coarse correction training
     config.model.train_posterior_widen=True      # Stage 4.5: Widen posterior using corrected samples
     config.model.train_joint_refinement=True     # Joint posterior + correction refinement

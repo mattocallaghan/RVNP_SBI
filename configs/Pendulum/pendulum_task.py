@@ -123,7 +123,6 @@ def get_config():
     config.model.n_alternates = 2  # Number of iterations per stage in alternating mode (reduced for testing)
     
     # === MULTI-STAGE TRAINING CONFIGURATION ===
-    config.model.train_posterior_init=True       # Stage 3: Initialize posterior p_φ(θ|x_obs)
     config.model.train_correction_coarse=True    # Stage 4: Coarse correction training
     config.model.train_posterior_widen=True      # Stage 4.5: Widen posterior using corrected samples
     config.model.train_joint_refinement=True     # Joint posterior + correction refinement

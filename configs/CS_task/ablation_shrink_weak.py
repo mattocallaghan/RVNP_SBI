@@ -108,7 +108,6 @@ def get_config():
 
     # === 5-STAGE TRAINING CONFIGURATION ===
     config.model.train_simulator=False
-    config.model.train_posterior_init=True
     config.model.train_correction_coarse=True
     config.model.train_posterior_widen=True
     config.model.train_joint_refinement=True

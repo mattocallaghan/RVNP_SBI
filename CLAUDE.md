@@ -156,20 +156,44 @@ python scripts/integrated_pipeline.py --task=SIR --method=RVNP-mu_hybrid --nobs=
 ## Architecture Details
 
 ### RVNP Training Stages
-1-2. Train simulator flow p(x_sim|θ)
-3. Initialize posterior p_φ(θ|x_obs)
-4. Coarse correction training
-4.5. Widen posterior
-5. Joint refinement (posterior + correction)
-6. Final posterior tuning
+
+**Stage 1: Embedding Training** (if needed for high-dimensional observations)
+- **Data**: Pre-generated simulations from p(x|θ)
+- **Trains**: Embedding network f_ω(x), discriminator, decoder
+- **Method**: InfoMax (mutual information maximization)
+- **Output**: Trained f_ω that compresses high-D x to low-D embeddings
+
+**Stage 2: Simulator Flow Training**
+- **Data**: Pre-generated simulations (θ, x) ~ p(θ)p(x|θ)
+- **Trains**: Simulator flow p(x|θ)
+- **Method**: Maximum likelihood
+- **Output**: Trained simulator that can generate x ~ p(x|θ) for any θ
+
+**Stage 3: Joint Posterior + Correction Training**
+- **Data**: ONLY observed data x_obs (no pre-generated simulations)
+- **Trains**: Posterior q_φ(θ|x̂) and correction r_ψ(x̂|x,θ) jointly
+- **Method**: RVNP Loss (importance-weighted ELBO + shrinkage regularization)
+- **Training Loop**:
+  - Pass x_obs to RVNPLoss
+  - ALL sampling happens inside _kl_divergence:
+    1. Sample θ ~ q_φ(θ|x_obs) from current posterior
+    2. Sample x_sim ~ p(x|θ) from trained simulator (Stage 2)
+    3. Compute IW-ELBO with corrected observations x̂ ~ r_ψ(x̂|x_sim, θ)
+    4. Compute shrinkage: λ * E_θ[||μ_θ(θ)||²] using sampled θ
+    5. Return -ELBO + shrinkage
+  - Update both posterior φ and correction ψ via gradient descent
+- **Key Point**: No sampling in training loop - only x_obs passed to loss function
 
 ### Shrinkage Prior (mu_hybrid only)
+Computed INSIDE _kl_divergence using sampled θ ~ q_φ(θ|x_obs):
 ```python
-# In losses.py
-mean_shift_magnitudes = vmap(correction_model.get_mean_shift_magnitude)(theta_sim)
-mean_shift_penalty = jnp.mean(mean_shift_magnitudes)  # ||μ_θ(θ)||²
-shrinkage_loss = diagonal_penalty + mean_shift_penalty
-total_loss += lambda_shrinkage * shrinkage_loss
+# In losses.py _kl_divergence method
+# After sampling theta from posterior:
+if lambda_shrinkage > 0.0:
+    theta_flat = thetas_sampled.reshape(-1, thetas_sampled.shape[-1])
+    mean_shift_magnitudes = vmap(correction_model.get_mean_shift_magnitude)(theta_flat)
+    shrinkage_loss = lambda_shrinkage * jnp.mean(mean_shift_magnitudes)  # λ * E[||μ_θ(θ)||²]
+return elbo_loss + shrinkage_loss
 ```
 
 ### Parameter Counts

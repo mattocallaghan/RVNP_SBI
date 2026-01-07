@@ -86,7 +86,6 @@ def get_config():
     # Disable all complex training stages (NPE doesn't need them)
     config.model.train_simulator=False       # NPE doesn't train simulator
     config.model.train_embeddings=True       # NPE can use embeddings if available
-    config.model.train_posterior_init=False  # No initialization stage
     config.model.train_correction_coarse=False    # No correction model
     config.model.train_posterior_widen=False      # No widening stage
     config.model.train_joint_refinement=False     # No joint refinement
