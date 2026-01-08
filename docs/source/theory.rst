@@ -105,42 +105,56 @@ where:
 Importance-Weighted Variational Objective
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-RVNP jointly trains the posterior :math:`q_\phi(\theta|\hat{x})` and correction :math:`r_\psi(\hat{x}|x,\theta)` using an **importance-weighted variational objective**:
+RVNP jointly trains the posterior :math:`q_\phi(\theta|\hat{x})` and correction :math:`r_\psi(\hat{x}|x,\theta)` using an **importance-weighted objective**:
 
 .. math::
 
-    \mathcal{L}(\phi,\psi) = -\text{ELBO}(\phi,\psi) + \lambda_{\text{shrinkage}} \cdot \mathcal{R}_{\text{shrink}}(\psi)
-
-where the ELBO is computed using importance weighting and the shrinkage regularizes the correction model.
+    \mathcal{L}(\phi,\psi) = -\mathcal{L}_{\text{IWAE}}(\phi,\psi) + \lambda_{\text{shrinkage}} \cdot \mathcal{R}_{\text{shrink}}(\psi)
 
 **Loss Computation** (all inside ``_kl_divergence`` method):
 
 Given observed data :math:`x_{\text{obs}}`:
 
-1. **Sample** :math:`\theta \sim q_\phi(\theta|x_{\text{obs}})` from current posterior
-2. **Sample** :math:`x_{\text{sim}} \sim p_{\text{sim}}(x|\theta)` from trained simulator
-3. **Compute IW-ELBO**:
+1. **Sample** :math:`\theta_1, \ldots, \theta_K \sim q_\phi(\theta|x_{\text{obs}})` (K samples per observation)
+
+2. **For each** :math:`\theta_k`, **sample** :math:`x_{\text{sim}}^{(1)}, \ldots, x_{\text{sim}}^{(N)} \sim p_{\text{sim}}(x|\theta_k)` (N samples per theta)
+
+3. **Compute Importance-Weighted Autoencoder Loss**:
 
    .. math::
 
-       \text{ELBO} = \mathbb{E}_{\theta \sim q_\phi(\theta|x_{\text{obs}})} \left[ \text{logsumexp}_{x_{\text{sim}}} \log r_\psi(x_{\text{obs}}|x_{\text{sim}},\theta) \right]
+       \mathcal{L}_{\text{IWAE}} = \frac{1}{K} \sum_{k=1}^{K} \log \left( \frac{1}{N} \sum_{n=1}^{N} \frac{r_\psi(x_{\text{obs}}|x_{\text{sim}}^{(n)}, \theta_k) \, p(\theta_k)}{q_\phi(\theta_k|x_{\text{obs}})} \right)
 
-   - Uses multiple samples per :math:`\theta` for importance weighting
-   - Evaluates correction model's ability to map simulator outputs to observations
-
-4. **Compute Shrinkage Prior**:
+   Equivalently (using logsumexp for numerical stability):
 
    .. math::
 
-       \mathcal{R}_{\text{shrink}}(\psi) = \mathbb{E}_{\theta \sim q_\phi(\theta|x_{\text{obs}})}[\|\mu_\theta(\theta)\|^2]
+       \mathcal{L}_{\text{IWAE}} = \frac{1}{K} \sum_{k=1}^{K} \left[ \text{logsumexp}_{n=1}^{N} \left( \log r_\psi(x_{\text{obs}}|x_{\text{sim}}^{(n)}, \theta_k) \right) - \log N - \log q_\phi(\theta_k|x_{\text{obs}}) + \log p(\theta_k) \right]
 
-   - Uses the SAME :math:`\theta` samples from step 1
+   where:
+
+   - :math:`r_\psi(x_{\text{obs}}|x_{\text{sim}}, \theta)`: Correction model likelihood
+   - :math:`p(\theta)`: Prior distribution
+   - :math:`q_\phi(\theta|x_{\text{obs}})`: Posterior approximation
+   - logsumexp provides tighter bound than single-sample ELBO
+
+4. **Compute Shrinkage Regularization**:
+
+   .. math::
+
+       \mathcal{R}_{\text{shrink}}(\psi) = \frac{1}{K} \sum_{k=1}^{K} \|\mu_\theta(\theta_k)\|^2
+
+   where :math:`\theta_k` are the SAME samples from step 1, and :math:`\mu_\theta(\theta)` is the neural mean correction function.
+
    - Regularizes neural mean shift toward zero
    - Prevents overfitting when mean misspecification is minimal
-   - Weighted by :math:`\lambda_{\text{shrinkage}}`
    - **Important**: Only penalizes the mean neural network output, NOT the covariance
 
-5. **Return**: :math:`-\text{ELBO} + \lambda_{\text{shrinkage}} \cdot \mathcal{R}_{\text{shrink}}(\psi)`
+5. **Total Loss**:
+
+   .. math::
+
+       \mathcal{L}(\phi,\psi) = -\mathcal{L}_{\text{IWAE}} + \lambda_{\text{shrinkage}} \cdot \mathcal{R}_{\text{shrink}}(\psi)
 
 Multi-Stage Training
 ~~~~~~~~~~~~~~~~~~~~
@@ -165,17 +179,17 @@ RVNP uses a 3-stage training pipeline:
 
 - **Data**: ONLY observed data :math:`x_{\\text{obs}}` (no pre-generated simulations used)
 - **Trains**: Posterior :math:`q_\\phi(\\theta|\hat{x})` and correction :math:`r_\\psi(\hat{x}|x,\\theta)` jointly
-- **Method**: RVNP Loss (importance-weighted ELBO + shrinkage regularization)
+- **Method**: RVNP Loss (:math:`-\mathcal{L}_{\text{IWAE}}` + shrinkage regularization)
 - **Training Loop**:
 
   * Pass :math:`x_{\\text{obs}}` to RVNPLoss function
   * ALL sampling happens inside ``_kl_divergence`` method:
 
-    1. Sample :math:`\\theta \sim q_\\phi(\\theta|x_{\\text{obs}})` from current posterior
-    2. Sample :math:`x_{\\text{sim}} \sim p_{\\text{sim}}(x|\\theta)` from trained simulator (Stage 2)
-    3. Compute IW-ELBO with corrected observations :math:`\hat{x} \sim r_\\psi(\hat{x}|x_{\\text{sim}},\\theta)`
-    4. Compute shrinkage regularization: :math:`\lambda_{\\text{shrinkage}} \cdot \mathbb{E}_{\\theta}[\|\mu_\\theta(\\theta)\|^2]` using sampled :math:`\\theta`
-    5. Return :math:`-\\text{ELBO} + \\text{shrinkage}`
+    1. Sample :math:`\\theta_1, \ldots, \\theta_K \sim q_\\phi(\\theta|x_{\\text{obs}})` from current posterior
+    2. For each :math:`\\theta_k`, sample :math:`x_{\\text{sim}}^{(n)} \sim p_{\\text{sim}}(x|\\theta_k)` from trained simulator (Stage 2)
+    3. Compute :math:`\mathcal{L}_{\text{IWAE}}` using correction model :math:`r_\\psi(x_{\\text{obs}}|x_{\\text{sim}},\\theta)`
+    4. Compute shrinkage: :math:`\mathcal{R}_{\text{shrink}}(\psi) = \frac{1}{K}\sum_{k}\|\mu_\\theta(\\theta_k)\|^2` using sampled :math:`\\theta_k`
+    5. Return :math:`-\mathcal{L}_{\text{IWAE}} + \lambda_{\\text{shrinkage}} \cdot \mathcal{R}_{\text{shrink}}(\psi)`
 
   * Update :math:`\\phi` (posterior) and :math:`\\psi` (correction) via gradient descent
   * **Key point**: No sampling in training loop - only :math:`x_{\\text{obs}}` passed to loss

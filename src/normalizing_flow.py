@@ -599,16 +599,18 @@ class Rational_Quadratic_Spline_w_posterior(Normalizing_Flow):
         """Train posterior q_φ(θ|x̂) and correction r_ψ(x̂|x,θ) jointly using RVNP Loss.
 
         This is Stage 3 of RVNP training. Uses ONLY observed data (x_obs) - no pre-generated
-        simulations. ALL sampling happens inside the loss function (_kl_divergence):
+        simulations. ALL sampling happens inside the loss function (_kl_divergence).
+
+        **RVNP Loss**: :math:`\mathcal{L} = -\mathcal{L}_{\text{IWAE}} + \lambda_{\text{shrinkage}} \cdot \mathcal{R}_{\text{shrink}}`
 
         Training Loop:
         1. Pass x_obs to RVNPLoss
         2. Inside _kl_divergence:
-           a. Sample θ ~ q_φ(θ|x_obs) from current posterior
-           b. Sample x_sim ~ p(x|θ) from trained simulator (Stage 2)
-           c. Compute IW-ELBO with corrected observations x̂ ~ r_ψ(x̂|x_sim, θ)
-           d. Compute shrinkage prior: λ * E_θ[||μ_θ(θ)||²] using sampled θ
-           e. Return -ELBO + shrinkage
+           a. Sample θ₁, ..., θ_K ~ q_φ(θ|x_obs) from current posterior (K samples)
+           b. For each θ_k, sample x_sim ~ p(x|θ_k) from trained simulator (Stage 2)
+           c. Compute L_IWAE using correction model r_ψ(x_obs|x_sim, θ)
+           d. Compute shrinkage: R_shrink = (1/K) Σ_k ||μ_θ(θ_k)||² using sampled θ_k
+           e. Return -L_IWAE + λ_shrinkage * R_shrink
         3. Update both posterior φ and correction ψ via gradient descent
 
         Args:

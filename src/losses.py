@@ -223,55 +223,46 @@ class RVNPLoss:
         key: PRNGKeyArray,
         embedding_stats: dict = None,
     ) -> Float[Array, ""]:
-        """Compute RVNP loss: importance-weighted variational objective with shrinkage regularization.
+        """Compute RVNP loss: importance-weighted autoencoder objective with shrinkage regularization.
 
-        Implements the RVNP loss function that combines:
-        - Importance-Weighted ELBO (via _kl_divergence)
-        - Shrinkage Prior (computed internally in _kl_divergence)
+        Implements the RVNP loss function:
 
-        Mathematical Formulation:
+        .. math::
 
-            .. math::
+            \mathcal{L}(\phi,\psi) = -\mathcal{L}_{\text{IWAE}}(\phi,\psi) + \lambda_{\text{shrinkage}} \cdot \mathcal{R}_{\text{shrink}}(\psi)
 
-                L(\phi,\psi) = -\\text{ELBO} + \lambda_{shrinkage} \cdot \mathbb{E}_{\\theta \sim q_\phi(\\theta|x_{obs})}[\|\mu_\\theta(\\theta)\|^2]
+        where:
 
-            where:
-                - :math:`q_\phi(\\theta|\hat{x})`: Posterior flow (amortized inference)
-                - :math:`r_\psi(\hat{x}|x,\\theta)`: Correction model :math:`N(\hat{x}; \mu_\psi(x,\\theta), \Sigma_\psi(\\theta))`
-                - :math:`p_{sim}(x|\\theta)`: Simulator flow (trained separately)
-                - :math:`\\theta`: Parameters of interest sampled from posterior
-                - :math:`x`: Simulator output
-                - :math:`\hat{x}`: Corrected observation
+        - :math:`\mathcal{L}_{\text{IWAE}}`: Importance-weighted autoencoder loss (computed in _kl_divergence)
+        - :math:`\mathcal{R}_{\text{shrink}}(\psi) = \frac{1}{K}\sum_{k=1}^K \|\mu_\theta(\theta_k)\|^2`: Shrinkage regularization
+        - :math:`q_\phi(\theta|\hat{x})`: Posterior flow (amortized inference)
+        - :math:`r_\psi(\hat{x}|x,\theta)`: Correction model
+        - :math:`p_{\text{sim}}(x|\theta)`: Simulator flow (trained separately)
 
         Args:
-            params_flow: Trainable parameters of posterior flow :math:`q_\phi(\\theta|\hat{x})`
+            params_flow: Trainable parameters of posterior flow
             static_flow: Static (non-trainable) parameters of posterior flow
-            params_embedding: Trainable parameters of embedding network :math:`f_\omega(x)`
-                             (used for high-dimensional observations)
+            params_embedding: Trainable parameters of embedding network (optional)
             static_embedding: Static parameters of embedding network
-            params_correction: Trainable parameters of correction model :math:`r_\psi(\hat{x}|x,\\theta)`
+            params_correction: Trainable parameters of correction model
             static_correction: Static parameters of correction model
-            simulator_flow: Pre-trained simulator flow :math:`p_{sim}(x|\\theta)` (complete model,
-                           not split into params/static)
-            x_obs: Observed data for inference, shape (n_obs, obs_dim).
-                   This is the ONLY data input - all sampling happens inside _kl_divergence.
+            simulator_flow: Pre-trained simulator flow (complete model)
+            x_obs: Observed data, shape (n_obs, obs_dim).
+                   **ONLY data input** - all sampling happens inside _kl_divergence
             key: JAX random key for stochastic sampling
-            embedding_stats: Optional dictionary with embedding statistics:
-                - 'mean': Normalization mean
-                - 'std': Normalization standard deviation
+            embedding_stats: Optional dict with 'mean' and 'std' for embedding normalization
 
         Returns:
-            Scalar loss value = -ELBO + shrinkage
+            Scalar loss = :math:`-\mathcal{L}_{\text{IWAE}} + \lambda_{\text{shrinkage}} \cdot \mathcal{R}_{\text{shrink}}`
 
         Notes:
-            **Important**: This method does NOT take theta or x_sim as parameters.
             All sampling occurs inside _kl_divergence:
 
-            1. Sample :math:`\\theta \sim q_\phi(\\theta|x_{obs})` from current posterior
-            2. Sample :math:`x_{sim} \sim p_{sim}(x|\\theta)` from trained simulator
-            3. Compute IW-ELBO using corrected samples :math:`\hat{x} \sim r_\psi(\hat{x}|x_{sim},\\theta)`
-            4. Compute shrinkage regularization on :math:`\mu_\\theta(\\theta)` using sampled theta
-            5. Return -ELBO + shrinkage
+            1. Sample :math:`\theta_1, \ldots, \theta_K \sim q_\phi(\theta|x_{\text{obs}})`
+            2. For each :math:`\theta_k`, sample :math:`x_{\text{sim}}^{(n)} \sim p_{\text{sim}}(x|\theta_k)`
+            3. Compute :math:`\mathcal{L}_{\text{IWAE}}` using correction model
+            4. Compute :math:`\mathcal{R}_{\text{shrink}}(\psi)` using sampled :math:`\theta_k`
+            5. Return :math:`-\mathcal{L}_{\text{IWAE}} + \lambda_{\text{shrinkage}} \cdot \mathcal{R}_{\text{shrink}}`
         """
 
         ###########
@@ -297,8 +288,9 @@ class RVNPLoss:
         # ======== ======== ======== ======== ======== ======== ========
         # ========              RVNP LOSS                       ========
         # ======== ======== ======== ======== ======== ======== ========
-        # Importance-Weighted ELBO with internal shrinkage regularization
-        # All sampling (θ ~ q_φ(θ|x_obs) and x_sim ~ p(x|θ)) happens inside _kl_divergence
+        # L_IWAE (Importance-Weighted Autoencoder loss) with shrinkage regularization
+        # All sampling (θ_k ~ q_φ(θ|x_obs) and x_sim ~ p(x|θ)) happens inside _kl_divergence
+        # Returns: -L_IWAE + λ_shrinkage * R_shrink
         key_variational, key = jax.random.split(key)
         reverse = False  # Use forward KL divergence
         loss = self.lambda_variational * self._kl_divergence(
@@ -438,30 +430,40 @@ class RVNPLoss:
 
     ) -> Float[Array, ""]:
         """
-        Compute importance-weighted ELBO with shrinkage regularization.
+        Compute importance-weighted autoencoder loss (L_IWAE) with shrinkage regularization.
 
         This method performs ALL sampling internally:
-        1. Sample θ ~ q_φ(θ|x_obs) from posterior for each observation
-        2. Sample x_sim ~ p(x|θ) from simulator for each sampled θ
-        3. Compute corrected observations x̂ ~ r_ψ(x̂|x_sim, θ)
-        4. Compute IW-ELBO: E_θ[logsumexp(log p(x_obs|x_sim, θ))]
-        5. Compute shrinkage prior: λ * E_θ[||μ_θ(θ)||²] using sampled θ
-        6. Return -ELBO + shrinkage
+
+        1. Sample :math:`\\theta_1, \ldots, \\theta_K \sim q_\phi(\\theta|x_{\\text{obs}})` (K samples per obs)
+        2. For each :math:`\\theta_k`, sample :math:`x_{\\text{sim}}^{(1)}, \ldots, x_{\\text{sim}}^{(N)} \sim p(x|\\theta_k)` (N samples per theta)
+        3. Compute L_IWAE using importance weighting:
+
+           .. math::
+
+               \mathcal{L}_{\\text{IWAE}} = \\frac{1}{K} \sum_{k=1}^{K} \left[ \\text{logsumexp}_{n=1}^{N} \log r_\psi(x_{\\text{obs}}|x_{\\text{sim}}^{(n)}, \\theta_k) - \log N - \log q_\phi(\\theta_k|x_{\\text{obs}}) + \log p(\\theta_k) \\right]
+
+        4. Compute shrinkage regularization:
+
+           .. math::
+
+               \mathcal{R}_{\\text{shrink}} = \\frac{1}{K} \sum_{k=1}^{K} \|\\mu_\\theta(\\theta_k)\|^2
+
+        5. Return :math:`-\mathcal{L}_{\\text{IWAE}} + \lambda_{\\text{shrinkage}} \cdot \mathcal{R}_{\\text{shrink}}`
 
         Args:
-            correction_model: Correction model r_ψ(x̂|x_sim, θ)
-            simulator_flow: Trained simulator p(x|θ)
-            flow: Posterior flow q_φ(θ|x_obs) for sampling θ
-            reverse: Whether to use reverse KL (default: False for forward KL)
-            x_obs_real: Observed data (n_obs, obs_dim)
-            key: Random key for sampling
-            n_samples: Number of samples per theta (default: 100)
+            correction_model: Correction model :math:`r_\psi(x_{\\text{obs}}|x_{\\text{sim}}, \\theta)`
+            simulator_flow: Trained simulator :math:`p(x|\\theta)`
+            flow: Posterior flow :math:`q_\phi(\\theta|x_{\\text{obs}})` for sampling
+            reverse: Whether to use reverse KL (default: False)
+            x_obs_real: Observed data, shape (n_obs, obs_dim)
+            key: JAX random key for sampling
+            n_samples: Number of x_sim samples per theta (N in formula)
             kl_weight: Weight for KL divergence term (default: 1.0)
-            prior_log: Prior log probability function
-            lambda_shrinkage: Weight for shrinkage prior on mean correction (default: 0.0)
+            prior_log: Prior log probability function :math:`\log p(\\theta)`
+            lambda_shrinkage: Shrinkage weight :math:`\lambda_{\\text{shrinkage}}` (default: 0.0)
 
         Returns:
-            Scalar loss = -ELBO + shrinkage_prior
+            Scalar loss = :math:`-\mathcal{L}_{\\text{IWAE}} + \lambda_{\\text{shrinkage}} \cdot \mathcal{R}_{\\text{shrink}}`
         """
         n_obs = x_obs_real.shape[0]
                 
@@ -557,29 +559,30 @@ class RVNPLoss:
                 #return logsumexp(elbo_single_obs-log_q_phi_single+log_prior_single)- jnp.log(theta_samples_single.shape[0])
                 return logsumexp(elbo_single_obs-log_q_phi_single)+log_prior_single.mean()- jnp.log(theta_samples_single.shape[0])
         
-        
-        # Compute IW ELBO for all observations
-        elbo_per_obs = vmap(compute_elbo_single_obs)(
+
+        # Compute L_IWAE for all observations
+        iwae_per_obs = vmap(compute_elbo_single_obs)(
             x_obs_real, thetas_sampled, x_sim_samples, log_p_posterior,prior_logp
         )
 
-        # Negative IW ELBO as loss (we want to maximize ELBO, so minimize negative ELBO)
-        elbo_loss = -jnp.mean(elbo_per_obs)
+        # Negative L_IWAE as loss (we want to maximize L_IWAE, so minimize negative L_IWAE)
+        iwae_loss = -jnp.mean(iwae_per_obs)
 
-        # Compute shrinkage prior on mean correction using sampled θ ~ q_φ(θ|x_obs)
+        # Compute shrinkage regularization R_shrink using sampled θ_k ~ q_φ(θ|x_obs)
         shrinkage_loss = 0.0
         if lambda_shrinkage > 0.0:
-            # thetas_sampled shape: (n_obs, samples_per_theta, theta_dim)
-            # Flatten to (n_obs * samples_per_theta, theta_dim) for batch processing
+            # thetas_sampled shape: (n_obs, K, theta_dim)
+            # Flatten to (n_obs * K, theta_dim) for batch processing
             theta_flat = thetas_sampled.reshape(-1, thetas_sampled.shape[-1])
 
-            # Compute mean shift magnitude ||μ_θ(θ)||² for each theta sample
+            # Compute ||μ_θ(θ_k)||² for each sampled theta
             mean_shift_magnitudes = vmap(correction_model.get_mean_shift_magnitude)(theta_flat)
 
-            # Average over all samples
+            # R_shrink = (1/K) Σ_k ||μ_θ(θ_k)||²
             shrinkage_loss = lambda_shrinkage * jnp.mean(mean_shift_magnitudes)
 
-        return elbo_loss + shrinkage_loss
+        # Total loss: -L_IWAE + λ_shrinkage * R_shrink
+        return iwae_loss + shrinkage_loss
 
 
     @eqx.filter_jit

@@ -172,28 +172,32 @@ python scripts/integrated_pipeline.py --task=SIR --method=RVNP-mu_hybrid --nobs=
 **Stage 3: Joint Posterior + Correction Training**
 - **Data**: ONLY observed data x_obs (no pre-generated simulations)
 - **Trains**: Posterior q_φ(θ|x̂) and correction r_ψ(x̂|x,θ) jointly
-- **Method**: RVNP Loss (importance-weighted ELBO + shrinkage regularization)
+- **Method**: RVNP Loss = -L_IWAE + shrinkage regularization
 - **Training Loop**:
   - Pass x_obs to RVNPLoss
   - ALL sampling happens inside _kl_divergence:
-    1. Sample θ ~ q_φ(θ|x_obs) from current posterior
-    2. Sample x_sim ~ p(x|θ) from trained simulator (Stage 2)
-    3. Compute IW-ELBO with corrected observations x̂ ~ r_ψ(x̂|x_sim, θ)
-    4. Compute shrinkage: λ * E_θ[||μ_θ(θ)||²] using sampled θ
-    5. Return -ELBO + shrinkage
+    1. Sample θ₁, ..., θ_K ~ q_φ(θ|x_obs) from current posterior (K samples)
+    2. For each θ_k, sample x_sim ~ p(x|θ_k) from trained simulator (Stage 2)
+    3. Compute L_IWAE using correction model r_ψ(x_obs|x_sim, θ)
+    4. Compute shrinkage: R_shrink = (1/K) Σ_k ||μ_θ(θ_k)||² using sampled θ_k
+    5. Return -L_IWAE + λ_shrinkage * R_shrink
   - Update both posterior φ and correction ψ via gradient descent
 - **Key Point**: No sampling in training loop - only x_obs passed to loss function
 
 ### Shrinkage Prior (mu_hybrid only)
-Computed INSIDE _kl_divergence using sampled θ ~ q_φ(θ|x_obs):
+Computed INSIDE _kl_divergence using sampled θ_k ~ q_φ(θ|x_obs):
 ```python
-# In losses.py _kl_divergence method
-# After sampling theta from posterior:
+# In losses.py _kl_divergence method (lines 562-575)
+# After computing L_IWAE with sampled theta:
 if lambda_shrinkage > 0.0:
+    # thetas_sampled shape: (n_obs, K, theta_dim)
     theta_flat = thetas_sampled.reshape(-1, thetas_sampled.shape[-1])
+    # Compute ||μ_θ(θ_k)||² for each sampled theta
     mean_shift_magnitudes = vmap(correction_model.get_mean_shift_magnitude)(theta_flat)
-    shrinkage_loss = lambda_shrinkage * jnp.mean(mean_shift_magnitudes)  # λ * E[||μ_θ(θ)||²]
-return elbo_loss + shrinkage_loss
+    # R_shrink = (1/K) Σ_k ||μ_θ(θ_k)||²
+    shrinkage_loss = lambda_shrinkage * jnp.mean(mean_shift_magnitudes)
+
+return iwae_loss + shrinkage_loss  # -L_IWAE + λ * R_shrink
 ```
 
 ### Parameter Counts
