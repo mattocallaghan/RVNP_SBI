@@ -55,52 +55,49 @@ Standard NPE learns an amortized posterior :math:`q_\phi(\theta|x)` by maximizin
 RVNP Approach
 -------------
 
-Correction Model
-~~~~~~~~~~~~~~~~
+Error Model
+~~~~~~~~~~~
 
-RVNP introduces a **correction model** :math:`r_\psi(\hat{x}|x,\theta)` that transforms simulator outputs to match real observations:
+RVNP introduces an **error model** :math:`p_\alpha(x_{\text{obs}}|x_{\text{sim}},\theta)` that bridges the simulation-to-reality gap:
 
 .. math::
 
-    r_\psi(\hat{x}|x,\theta) = \mathcal{N}(\hat{x}; \mu_\psi(x,\theta), \Sigma_\psi(\theta))
+    p_\alpha(x_{\text{obs}}|x_{\text{sim}},\theta) = \mathcal{N}(x_{\text{obs}}; x_{\text{sim}}, \xi(\theta;\alpha))
 
 where:
 
-- :math:`x`: Original simulator output
-- :math:`\hat{x}`: Corrected observation
-- :math:`\psi`: Correction model parameters
+- :math:`x_{\text{sim}}`: Simulator output
+- :math:`x_{\text{obs}}`: Real observation
+- :math:`\xi(\theta;\alpha)`: Covariance matrix parametrized by :math:`\alpha`
+- :math:`\theta`: Parameters of interest
 
-RVNP-simple (Baseline)
-^^^^^^^^^^^^^^^^^^^^^^^
+**Paper Formulation** (O'Callaghan et al., 2025, Equations 15-16):
 
-Fixed diagonal covariance correction:
-
-.. math::
-
-    \mu_\psi(x,\theta) &= x \\
-    \Sigma_\psi(\theta) &= \text{diag}(\sigma_1^2, \ldots, \sigma_p^2)
-
-**Use when**: Minimal misspecification, only need variance adjustment
-
-RVNP-NN (Neural Network, Primary)
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-Neural mean and neural covariance correction:
+RVNP (Default):
 
 .. math::
 
+    \xi(\theta;\alpha) = \text{Diag}(\text{NN}(\theta;\alpha)) + \Lambda
+
+where :math:`\text{NN}(\theta;\alpha)` outputs diagonal components and :math:`\Lambda` are learned global off-diagonal components.
+
+RVNP-G (Global):
+
+.. math::
+
+    \xi(\theta;\alpha) = \alpha
+
+A full-rank Gaussian covariance matrix (via Cholesky decomposition) that is constant across :math:`\theta`.
+
+**Implementation Note**: The current implementation uses a **neural mean + neural covariance** variant (``correction_type='mu_hybrid'``) that differs from the paper:
+
+.. math::
+
+    p_\psi(\hat{x}|x,\theta) &= \mathcal{N}(\hat{x}; \mu_\psi(x,\theta), \Sigma_\psi(\theta)) \\
     \mu_\psi(x,\theta) &= x + \mu_{\text{global}} + \mu_\theta(\theta) \\
-    \Sigma_\psi(\theta) &= L_{\text{hybrid}}(\theta) L_{\text{hybrid}}(\theta)^T \\
-    L_{\text{hybrid}}(\theta) &= L_{\text{global}} + \text{diag}(\sigma_{\text{local}}(\theta))
+    \Sigma_\psi(\theta) &= L_{\text{hybrid}}(\theta) L_{\text{hybrid}}(\theta)^T
 
-where:
-
-- :math:`\mu_{\text{global}} \in \mathbb{R}^p`: Learnable global bias
-- :math:`\mu_\theta: \Theta \to \mathbb{R}^p`: Neural network for parameter-dependent bias
-- :math:`L_{\text{global}} \in \mathbb{R}^{p \times p}`: Global Cholesky factor (lower triangular)
-- :math:`\sigma_{\text{local}}: \Theta \to \mathbb{R}^p`: Neural network for local scaling
-
-**Use when**: Significant parameter-dependent misspecification
+This includes a learnable neural mean shift :math:`\mu_\theta(\theta)` regularized by the shrinkage prior :math:`\mathcal{R}_{\text{shrink}}(\psi) = \frac{1}{K}\sum_k \|\mu_\theta(\theta_k)\|^2`.
 
 Importance-Weighted Variational Objective
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -203,10 +200,35 @@ This staged approach ensures:
 Calibration Metrics
 -------------------
 
-ACAUC (Primary)
-~~~~~~~~~~~~~~~
+**Paper Metrics** (O'Callaghan et al., 2025, Section 4.1):
 
-**Average Coverage Area Under Curve** measures continuous calibration:
+The paper uses the following metrics:
+
+**AEPC** (Average Expected Posterior Coverage):
+    .. math::
+
+        \alpha := \int_0^1 [\text{EPC}(\gamma) - \gamma] d\gamma
+
+    where :math:`\text{EPC}(\gamma) = \mathbb{E}_{\theta^*,x_{\text{obs}}}[\mathbb{1}\{\theta^* \in \text{HDR}_{q_\phi(\theta|x_{\text{obs}})}(1-\gamma)\}]`
+
+**AEMPC** (Average Expected Marginal Posterior Coverage):
+    .. math::
+
+        \alpha_{(\text{marginal})} := \frac{1}{m} \sum_{i=1}^m \int_0^1 [\text{EMPC}(\gamma)_i - \gamma] d\gamma
+
+**LPP** (Log Posterior Probability):
+    .. math::
+
+        \text{LPP} := \mathbb{E}[\log q_\phi(\theta^*|x_{\text{obs}})]
+
+**NRMSE** (Normalized Root Mean Square Error):
+    .. math::
+
+        \text{NRMSE} = \frac{1}{N_{\text{obs}}} \sum_{j=1}^{N_{\text{obs}}} \frac{\sqrt{\frac{1}{S}\sum_{s=1}^S (\theta_j^* - \theta_j^{(s)})^2}}{\text{Std}(\theta_{\text{prior}})}
+
+**Implementation Metrics**:
+
+The current implementation uses **ACAUC** (Average Coverage Area Under Curve) as the primary calibration metric, which differs from the paper:
 
 .. math::
 
@@ -217,25 +239,12 @@ where:
 - :math:`d`: Parameter dimension
 - :math:`\theta_j^*`: True value of parameter :math:`j`
 - :math:`C_\alpha^j`: :math:`\alpha`-level credible interval for dimension :math:`j`
-- :math:`\mathbb{1}[\cdot]`: Indicator function
 
 **Interpretation**:
 
 - ACAUC = 1.0: Perfect calibration
 - ACAUC < 1.0: Under-coverage (overconfident posterior)
 - ACAUC > 1.0: Over-coverage (too conservative)
-
-Other Metrics
-~~~~~~~~~~~~~
-
-**AEPC** (Average Expected Posterior Coverage):
-    Discrete calibration at specific :math:`\alpha` levels (e.g., 0.95)
-
-**LPP** (Log Posterior Probability):
-    Measures likelihood quality: :math:`\mathbb{E}[\log q_\phi(\theta^*|x_{\text{obs}})]`
-
-**NRMSE** (Normalized Root Mean Square Error):
-    Parameter estimation accuracy: :math:`\sqrt{\mathbb{E}[\|\theta^* - \hat{\theta}\|^2]} / \|\theta^*\|`
 
 **ESS** (Effective Sample Size):
     Sample efficiency (SIR task only)

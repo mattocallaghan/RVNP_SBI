@@ -50,10 +50,23 @@ python scripts/integrated_pipeline.py --task=SIR --method=RVNP-mu_hybrid --nobs=
 
 ## Methods
 
-### 1. RVNP-NN ⭐ (Main Method)
+### Error Model Background
+
+**Paper Formulation** (O'Callaghan et al., 2025):
+- Error model: `pα(xobs|xsim,θ) = N(xobs; xsim, ξ(θ;α))`
+- RVNP (Eq. 15): `ξ(θ;α) = Diag(NN(θ;α)) + Λ`
+- RVNP-G (Eq. 16): `ξ(θ;α) = α` (global, constant across θ)
+
+**Implementation**: Uses neural mean + neural covariance variant that differs from paper:
+- `pψ(x̂|x,θ) = N(x̂; μψ(x,θ), Σψ(θ))`
+- `μψ(x,θ) = x + μ_global + μ_θ(θ)` (neural mean shift)
+- `Σψ(θ) = L_hybrid(θ) L_hybrid(θ)ᵀ` (hybrid covariance)
+
+### 1. RVNP-mu_hybrid ⭐ (Main Method)
 - **Type**: Neural mean + neural covariance correction
-- **Config**: `correction_type='NN'`
+- **Config**: `correction_type='mu_hybrid'`
 - **Mean**: μ = x + μ_global + μ_θ(θ) where μ_θ is neural network
+- **Covariance**: Hybrid neural covariance structure
 - **Shrinkage Prior**: L2 penalty on ||μ_θ(θ)||² (controlled by `lambda_shrinkage`)
 - **Implementation**: `models/correction_model.py` (MuHybridCorrectionModel)
 
@@ -61,6 +74,7 @@ python scripts/integrated_pipeline.py --task=SIR --method=RVNP-mu_hybrid --nobs=
 - **Type**: Diagonal covariance correction
 - **Config**: `correction_type='simple'`
 - **Mean**: μ = x (no neural mean)
+- **Covariance**: Fixed diagonal
 
 ### 3. NPE (Baseline)
 - **Type**: No correction
@@ -68,7 +82,7 @@ python scripts/integrated_pipeline.py --task=SIR --method=RVNP-mu_hybrid --nobs=
 
 **⚠️ DO NOT confuse**:
 - `correction_type='hybrid'` = Neural covariance ONLY (deprecated) ❌
-- `correction_type='NN'` = Neural mean + covariance ✅
+- `correction_type='mu_hybrid'` = Neural mean + covariance ✅
 
 ---
 
@@ -102,25 +116,40 @@ python scripts/integrated_pipeline.py --task=SIR --method=RVNP-mu_hybrid --nobs=
 
 ## Metrics
 
+### Paper Metrics (O'Callaghan et al., 2025, Section 4.1)
+
+1. **AEPC** - Average Expected Posterior Coverage
+   - α := ∫₀¹ [EPC(γ) - γ]dγ
+   - Calibration metric from paper
+
+2. **AEMPC** - Average Expected Marginal Posterior Coverage
+   - α_marginal := (1/m) Σᵢ ∫₀¹ [EMPC(γ)ᵢ - γ]dγ
+   - Marginal calibration metric from paper
+
+3. **LPP** - Log Posterior Probability
+   - E[log qφ(θ*|x_obs)]
+   - Higher = better
+
+4. **NRMSE** - Normalized Root Mean Square Error
+   - Parameter estimation accuracy
+   - Lower = better
+
+### Implementation Metrics (differs from paper)
+
 1. **ACAUC** (Primary) - Average Coverage Area Under Curve
-   - Continuous calibration metric
+   - Continuous calibration metric (NOT in paper)
+   - ACAUC = (1/d) Σⱼ ∫₀¹ 𝟙[θⱼ* ∈ Cᵅʲ] dα
    - Ideal value: 1.0 (perfect calibration)
    - < 1.0: Under-covered (overconfident)
    - > 1.0: Over-covered (too conservative)
 
-2. **AEPC** - Average Expected Posterior Coverage
-   - Discrete calibration at specific α levels
+2. **LPP, NRMSE** - Same as paper
 
-3. **LPP** - Log Posterior Probability
+3. **ESS** - Effective Sample Size
    - Higher = better
+   - Task-specific (SIR only)
 
-4. **NRMSE** - Normalized Root Mean Square Error
-   - Lower = better
-
-5. **ESS** - Effective Sample Size
-   - Higher = better
-
-6. **Training Time** - Component-wise breakdown
+4. **Training Time** - Component-wise breakdown
    - Tracked via `time_tracker.py`
 
 ---
