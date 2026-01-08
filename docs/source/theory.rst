@@ -160,36 +160,36 @@ RVNP uses a 3-stage training pipeline:
 
 **Stage 1: Embedding Training** (optional, for high-dimensional observations)
 
-- **Data**: Pre-generated simulations :math:`(\\theta, x) \sim p(\\theta)p_{\\text{sim}}(x|\\theta)`
-- **Trains**: Embedding network :math:`f_\\omega(x)`, discriminator, decoder
+- **Data**: Pre-generated simulations :math:`(\theta, x) \sim p(\theta)p_{\text{sim}}(x|\theta)`
+- **Trains**: Embedding network :math:`f_\omega(x)`, discriminator, decoder
 - **Method**: InfoMax (mutual information maximization)
-- **Output**: Trained :math:`f_\\omega` that compresses high-dimensional :math:`x` to low-dimensional embeddings
+- **Output**: Trained :math:`f_\omega` that compresses high-dimensional :math:`x` to low-dimensional embeddings
 
 **Stage 2: Simulator Flow Training**
 
-- **Data**: Pre-generated simulations :math:`(\\theta, x) \sim p(\\theta)p_{\\text{sim}}(x|\\theta)`
-- **Trains**: Simulator flow :math:`p_{\\text{sim}}(x|\\theta)`
+- **Data**: Pre-generated simulations :math:`(\theta, x) \sim p(\theta)p_{\text{sim}}(x|\theta)`
+- **Trains**: Simulator flow :math:`p_{\text{sim}}(x|\theta)`
 - **Method**: Maximum likelihood on simulated data
-- **Output**: Trained simulator that generates :math:`x \sim p_{\\text{sim}}(x|\\theta)` for any :math:`\\theta`
+- **Output**: Trained simulator that generates :math:`x \sim p_{\text{sim}}(x|\theta)` for any :math:`\theta`
 
 **Stage 3: Joint Posterior + Correction Training**
 
-- **Data**: ONLY observed data :math:`x_{\\text{obs}}` (no pre-generated simulations used)
-- **Trains**: Posterior :math:`q_\\phi(\\theta|\hat{x})` and correction :math:`r_\\psi(\hat{x}|x,\\theta)` jointly
+- **Data**: ONLY observed data :math:`x_{\text{obs}}` (no pre-generated simulations used)
+- **Trains**: Posterior :math:`q_\phi(\theta|\hat{x})` and correction :math:`r_\psi(\hat{x}|x,\theta)` jointly
 - **Method**: RVNP Loss (:math:`-\mathcal{L}_{\text{IWAE}}` + shrinkage regularization)
 - **Training Loop**:
 
-  * Pass :math:`x_{\\text{obs}}` to RVNPLoss function
+  * Pass :math:`x_{\text{obs}}` to RVNPLoss function
   * ALL sampling happens inside ``_kl_divergence`` method:
 
-    1. Sample :math:`\\theta_1, \ldots, \\theta_K \sim q_\\phi(\\theta|x_{\\text{obs}})` from current posterior
-    2. For each :math:`\\theta_k`, sample :math:`x_{\\text{sim}}^{(n)} \sim p_{\\text{sim}}(x|\\theta_k)` from trained simulator (Stage 2)
-    3. Compute :math:`\mathcal{L}_{\text{IWAE}}` using correction model :math:`r_\\psi(x_{\\text{obs}}|x_{\\text{sim}},\\theta)`
-    4. Compute shrinkage: :math:`\mathcal{R}_{\text{shrink}}(\psi) = \frac{1}{K}\sum_{k}\|\mu_\\theta(\\theta_k)\|^2` using sampled :math:`\\theta_k`
-    5. Return :math:`-\mathcal{L}_{\text{IWAE}} + \lambda_{\\text{shrinkage}} \cdot \mathcal{R}_{\text{shrink}}(\psi)`
+    1. Sample :math:`\theta_1, \ldots, \theta_K \sim q_\phi(\theta|x_{\text{obs}})` from current posterior
+    2. For each :math:`\theta_k`, sample :math:`x_{\text{sim}}^{(n)} \sim p_{\text{sim}}(x|\theta_k)` from trained simulator (Stage 2)
+    3. Compute :math:`\mathcal{L}_{\text{IWAE}}` using correction model :math:`r_\psi(x_{\text{obs}}|x_{\text{sim}},\theta)`
+    4. Compute shrinkage: :math:`\mathcal{R}_{\text{shrink}}(\psi) = \frac{1}{K}\sum_{k}\|\mu_\theta(\theta_k)\|^2` using sampled :math:`\theta_k`
+    5. Return :math:`-\mathcal{L}_{\text{IWAE}} + \lambda_{\text{shrinkage}} \cdot \mathcal{R}_{\text{shrink}}(\psi)`
 
-  * Update :math:`\\phi` (posterior) and :math:`\\psi` (correction) via gradient descent
-  * **Key point**: No sampling in training loop - only :math:`x_{\\text{obs}}` passed to loss
+  * Update :math:`\phi` (posterior) and :math:`\psi` (correction) via gradient descent
+  * **Key point**: No sampling in training loop - only :math:`x_{\text{obs}}` passed to loss
 
 This staged approach ensures:
 
