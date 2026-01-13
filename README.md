@@ -45,7 +45,7 @@ If you use this code in your research, please cite:
 
 ## Quick Start
 
-**📚 Additional Documentation**: [QUICKSTART.md](QUICKSTART.md) | [CLAUDE.md](CLAUDE.md) | [EXPERIMENTS_README.md](EXPERIMENTS_README.md)
+
 
 1. **Install Dependencies:**
    ```bash
