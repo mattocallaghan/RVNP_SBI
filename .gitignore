@@ -23,3 +23,6 @@ dist/
 /output
 /eval*.pdf
 .claude/
+.tmp.drivedownload/
+.tmp.driveupload/
+logs/

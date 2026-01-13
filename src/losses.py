@@ -20,6 +20,425 @@ from .models.correction_model import (
     HybridCorrectionModel, FullNeuralCorrectionModel, MuHybridCorrectionModel,
     GlobalCorrectionModel
 )
+from jax import custom_vjp
+from typing import Tuple, Any
+
+
+# ============================================================================
+# DReG (Doubly Reparameterized Gradient) Helper Functions
+# ============================================================================
+
+def _compute_normalized_weights(log_weights: Array) -> Array:
+    """Compute normalized importance weights from log weights.
+
+    Args:
+        log_weights: Log importance weights, shape (n_obs, K) or (K,)
+
+    Returns:
+        Normalized weights that sum to 1: exp(lw - logsumexp(lw))
+
+    Example:
+        >>> log_weights = jnp.array([[1.0, 2.0, 3.0]])
+        >>> weights = _compute_normalized_weights(log_weights)
+        >>> jnp.sum(weights)  # Should be 1.0
+    """
+    log_weights_normalized = log_weights - logsumexp(log_weights, axis=-1, keepdims=True)
+    return jnp.exp(log_weights_normalized)
+
+
+def _recompute_log_posterior_with_stop_grad(
+    flow: AbstractDistribution,
+    thetas: Array,
+    x_obs: Array
+) -> Array:
+    """Recompute log q_φ(θ|x_obs) with stop_gradient on flow parameters.
+
+    This is the KEY to DReG variance reduction: we recompute the posterior
+    log probability with stopped gradients on the flow parameters. This allows
+    the importance weights to be treated as constants during backpropagation,
+    enabling the reparameterization trick to work effectively.
+
+    Args:
+        flow: Posterior flow q_φ(θ|x_obs)
+        thetas: Sampled theta values, shape (n_obs, K, theta_dim)
+        x_obs: Observed data, shape (n_obs, obs_dim)
+
+    Returns:
+        Log probabilities with stopped gradients, shape (n_obs, K)
+    """
+    # Partition flow into parameters and static structure
+    params_flow, static_flow = eqx.partition(
+        flow,
+        eqx.is_inexact_array,
+        is_leaf=lambda leaf: isinstance(leaf, paramax.NonTrainable),
+    )
+
+    # Stop gradients on parameters (like PyTorch's .detach())
+    params_flow_stopped = stop_gradient(params_flow)
+
+    # Reconstruct flow with stopped parameters
+    flow_stopped = paramax.unwrap(eqx.combine(params_flow_stopped, static_flow))
+
+    # Compute log prob with stopped flow
+    def log_prob_single_obs(thetas_k, x_obs_single):
+        """Compute log prob for all K thetas given single observation."""
+        return vmap(lambda theta: flow_stopped.log_prob(theta, condition=x_obs_single))(thetas_k)
+
+    # Vectorize over observations
+    log_probs_stopped = vmap(log_prob_single_obs)(thetas, x_obs)
+    return log_probs_stopped  # (n_obs, K)
+
+
+def _iwae_elbo_computation(
+    correction_model,
+    simulator_flow,
+    x_obs_real: Array,
+    thetas_sampled: Array,
+    keys_sim: Array,
+    n_sim_samples: int,
+) -> Array:
+    """Compute ELBO terms (inner logsumexp over x_sim samples).
+
+    This function is shared between forward and backward passes in DReG.
+    It samples from the simulator and computes the ELBO for each (obs, theta) pair:
+
+    ELBO_k = logsumexp_n[log p(x_obs|x_sim^n, θ_k)] - log N
+
+    Args:
+        correction_model: Correction model r_ψ(x_obs|x_sim, θ)
+        simulator_flow: Trained simulator p(x|θ)
+        x_obs_real: Observed data, shape (n_obs, obs_dim)
+        thetas_sampled: Sampled theta values, shape (n_obs, K, theta_dim)
+        keys_sim: Random keys for simulator sampling, shape (n_obs, K)
+        n_sim_samples: Number of simulator samples N per theta
+
+    Returns:
+        ELBO values, shape (n_obs, K)
+    """
+    # Sample x_sim from simulator for each theta
+    def sample_from_simulator_single(theta_single, key_single):
+        return simulator_flow.sample(key_single, (n_sim_samples,), condition=theta_single)
+
+    # Nested vmap: (n_obs, K) -> (n_obs, K, N, x_dim)
+    x_sim_samples = vmap(vmap(sample_from_simulator_single))(thetas_sampled, keys_sim)
+
+    # Compute ELBO for each (obs, theta) pair
+    def compute_elbo_single_obs_theta(x_obs_single, x_sim_samples_k, theta_k):
+        """Compute ELBO for single observation and single theta."""
+        # Prepare theta for broadcasting to match x_sim batch size
+        theta_1d = jnp.atleast_1d(theta_k)
+        theta_batch = jnp.broadcast_to(
+            theta_1d[None, :], (n_sim_samples, theta_1d.shape[-1])
+        )
+
+        # Compute log p(x_obs|x_sim^n, θ_k) for all N samples
+        log_p_obs_given_sim = vmap(
+            lambda x_sim, theta: correction_model.log_prob(x_obs_single, x_sim, theta)
+        )(x_sim_samples_k, theta_batch)
+
+        # ELBO_k = logsumexp_n[log p(x_obs|x_sim^n, θ_k)] - log N
+        elbo_k = logsumexp(log_p_obs_given_sim) - jnp.log(n_sim_samples)
+        return elbo_k
+
+    def compute_elbo_single_obs(x_obs_single, x_sim_samples_all_k, thetas_all_k):
+        """Compute ELBO for all K thetas given single observation."""
+        return vmap(
+            lambda x_sim_k, theta_k: compute_elbo_single_obs_theta(
+                x_obs_single, x_sim_k, theta_k
+            )
+        )(x_sim_samples_all_k, thetas_all_k)
+
+    # Vectorize over observations: (n_obs, K)
+    elbos = vmap(compute_elbo_single_obs)(x_obs_real, x_sim_samples, thetas_sampled)
+    return elbos
+
+
+# ============================================================================
+# DReG Implementation - Simple Direct Approach
+# ============================================================================
+
+def _iwae_with_dreg(
+    flow, correction_model, simulator_flow, prior_log,
+    x_obs_real, key, K, N
+):
+    """IWAE loss with DReG gradient estimator.
+
+    This uses a simple direct approach: compute IWAE loss for the forward pass,
+    then compute DReG-weighted objectives that JAX autodiff will differentiate correctly.
+
+    The key DReG insight: Use (w_k)² weights with stop_gradient on weight computation.
+
+    Args:
+        flow: Posterior flow q(θ|x)
+        correction_model: Correction model r(x̂|x,θ)
+        simulator_flow: Trained simulator p(x|θ)
+        prior_log: Prior log probability function
+        x_obs_real: Observed data
+        key: Random key
+        K: Number of importance samples
+        N: Number of simulator samples per theta
+
+    Returns:
+        IWAE loss (for forward) with DReG gradients (for backward)
+    """
+    n_obs = x_obs_real.shape[0]
+
+    # ============================================================================
+    # Forward pass: Standard IWAE
+    # ============================================================================
+
+    # 1. Sample theta ~ q_φ(θ|x_obs)
+    key_theta, key = jax.random.split(key)
+    keys_theta = jax.random.split(key_theta, n_obs)
+
+    def sample_thetas(x_single, k):
+        return flow.sample_and_log_prob(k, (K,), condition=x_single)
+
+    thetas_sampled, log_p_posterior = vmap(sample_thetas)(x_obs_real, keys_theta)
+
+    # 2. Compute prior log prob
+    prior_logp = vmap(vmap(prior_log))(thetas_sampled)
+
+    # 3. Generate simulator keys
+    key_sim, key = jax.random.split(key)
+    keys_sim = jax.random.split(key_sim, n_obs * K).reshape(n_obs, K)
+
+    # 4. Compute ELBO
+    elbos = _iwae_elbo_computation(
+        correction_model, simulator_flow, x_obs_real,
+        thetas_sampled, keys_sim, N
+    )
+
+    # 5. Compute IWAE loss (for forward value)
+    log_weights = elbos - log_p_posterior
+    iwae_per_obs = logsumexp(log_weights, axis=-1) + jnp.mean(prior_logp, axis=-1) - jnp.log(K)
+    iwae_loss = -jnp.mean(iwae_per_obs)
+
+    # ============================================================================
+    # DReG: Recompute with stopped gradients for backward pass
+    # ============================================================================
+
+    # Recompute log q(θ|x) with STOPPED flow parameters (key DReG component)
+    # Partition flow to stop gradients on parameters only
+    params_flow, static_flow = eqx.partition(flow, eqx.is_inexact_array)
+    params_flow_stopped = jax.tree_map(jax.lax.stop_gradient, params_flow)
+    flow_stopped = eqx.combine(params_flow_stopped, static_flow)
+
+    def compute_log_q_stopped(x_single, thetas_k):
+        return vmap(lambda theta: flow_stopped.log_prob(theta, condition=x_single))(thetas_k)
+
+    log_p_posterior_stopped = vmap(compute_log_q_stopped)(x_obs_real, thetas_sampled)
+
+    # Compute normalized importance weights with stopped gradients
+    log_weights_stopped = elbos - log_p_posterior_stopped
+    grad_weights = _compute_normalized_weights(log_weights_stopped)
+
+    # SQUARE the weights (THE KEY DReG DIFFERENCE from STL!)
+    grad_weights_squared = grad_weights ** 2
+
+    # Stop gradients on sampled thetas (treat them as fixed for gradient computation)
+    thetas_stopped = jax.lax.stop_gradient(thetas_sampled)
+
+    # Recompute log q WITHOUT stop_gradient (we want gradients through flow params!)
+    def compute_log_q_for_grad(x_single, thetas_k):
+        return vmap(lambda theta: flow.log_prob(theta, condition=x_single))(thetas_k)
+
+    log_q_for_grad = vmap(compute_log_q_for_grad)(x_obs_real, thetas_stopped)
+
+    # DReG objective for flow: weighted by SQUARED weights
+    dreg_log_weights_flow = elbos - log_q_for_grad
+    dreg_weighted_flow = grad_weights_squared * dreg_log_weights_flow
+    dreg_sum_flow = jnp.sum(dreg_weighted_flow, axis=-1)
+    prior_contrib = jnp.mean(prior_logp, axis=-1)
+    dreg_objective_flow = jnp.mean(dreg_sum_flow + prior_contrib)
+
+    # Standard IWAE objective for correction: weighted by single weights
+    iwae_weighted_corr = grad_weights * elbos
+    iwae_sum_corr = jnp.sum(iwae_weighted_corr, axis=-1)
+    iwae_objective_corr = jnp.mean(iwae_sum_corr + prior_contrib)
+
+    # Combine: return IWAE loss but with DReG objective gradients
+    # This works because JAX will autodiff through dreg_objective_flow and iwae_objective_corr
+    combined_objective = dreg_objective_flow + iwae_objective_corr
+
+    # Return standard IWAE loss for forward, but structured so gradients come from DReG
+    # Use stop_gradient trick: stopped_loss + (objective - stopped_objective)
+    # This gives forward value of iwae_loss but backward gradients of combined_objective
+    dreg_loss = jax.lax.stop_gradient(iwae_loss) + (combined_objective - jax.lax.stop_gradient(combined_objective))
+
+    return -dreg_loss  # Negative because we're minimizing loss
+
+
+# Note: Old _iwae_with_dreg_fwd and _iwae_with_dreg_bwd functions removed
+# New implementation uses direct JAX autodiff with stop_gradient trick
+
+def _old_iwae_with_dreg_fwd_REMOVED(
+    params_flow, static_flow,
+    params_correction, static_correction,
+    simulator_flow, prior_log,
+    x_obs_real, key,
+    simulator_samples_per_theta, n_sim_samples_per_theta,
+) -> Tuple[Float[Array, ""], Tuple]:
+    """Forward pass: Compute standard IWAE and save residuals for backward.
+
+    Returns:
+        loss: IWAE loss (scalar)
+        residuals: Tuple of values needed for backward pass
+    """
+    # Reconstruct models from params and static
+    flow = paramax.unwrap(eqx.combine(params_flow, static_flow))
+    correction_model = paramax.unwrap(eqx.combine(params_correction, static_correction))
+
+    n_obs = x_obs_real.shape[0]
+    K = simulator_samples_per_theta
+    N = n_sim_samples_per_theta
+
+    # 1. Sample theta ~ q_φ(θ|x_obs)
+    key_theta, key = jax.random.split(key)
+    keys_theta = jax.random.split(key_theta, n_obs)
+
+    def sample_thetas(x_single, k):
+        return flow.sample_and_log_prob(k, (K,), condition=x_single)
+
+    thetas_sampled, log_p_posterior = vmap(sample_thetas)(x_obs_real, keys_theta)
+
+    # 2. Compute prior log prob
+    prior_logp = vmap(vmap(prior_log))(thetas_sampled)
+
+    # 3. Generate simulator keys
+    key_sim, key = jax.random.split(key)
+    keys_sim = jax.random.split(key_sim, n_obs * K).reshape(n_obs, K)
+
+    # 4. Compute ELBO using helper function
+    elbos = _iwae_elbo_computation(
+        correction_model, simulator_flow, x_obs_real,
+        thetas_sampled, keys_sim, N
+    )
+
+    # 5. Compute IWAE loss
+    # IWAE = logsumexp(ELBO - log q) + log p - log K
+    # Note: Prior is OUTSIDE logsumexp for numerical stability
+    log_weights = elbos - log_p_posterior
+    iwae_per_obs = logsumexp(log_weights, axis=-1) + jnp.mean(prior_logp, axis=-1) - jnp.log(K)
+    iwae_loss = -jnp.mean(iwae_per_obs)
+
+    # 6. Save residuals for backward pass
+    residuals = (
+        params_flow, static_flow,
+        params_correction, static_correction,
+        simulator_flow, prior_log,
+        x_obs_real, thetas_sampled, keys_sim,
+        elbos, log_p_posterior, prior_logp,
+        jnp.array(K, dtype=jnp.int32),
+        jnp.array(N, dtype=jnp.int32),
+    )
+
+    return iwae_loss, residuals
+
+
+def _iwae_with_dreg_bwd(residuals: Tuple, g_loss: Float[Array, ""]) -> Tuple:
+    """Backward pass: Apply DReG importance weighting to gradients.
+
+    This is where the magic happens: we recompute importance weights with
+    stop_gradient on flow parameters, then use those weights to scale the
+    gradients. This reduces gradient variance compared to standard IWAE.
+
+    Args:
+        residuals: Saved values from forward pass
+        g_loss: Incoming gradient from downstream (usually 1.0)
+
+    Returns:
+        Gradients for all input arguments (matching forward signature)
+    """
+    # Unpack residuals
+    (params_flow, static_flow, params_correction, static_correction,
+     simulator_flow, prior_log, x_obs_real, thetas_sampled, keys_sim,
+     elbos, log_p_posterior, prior_logp, K, N) = residuals
+
+    # Reconstruct models
+    flow = paramax.unwrap(eqx.combine(params_flow, static_flow))
+    correction_model = paramax.unwrap(eqx.combine(params_correction, static_correction))
+
+    # KEY STEP 1: Recompute log q(θ|x) with STOP_GRADIENT on flow params
+    log_p_posterior_stopped = _recompute_log_posterior_with_stop_grad(
+        flow, thetas_sampled, x_obs_real
+    )
+
+    # KEY STEP 2: Compute normalized importance weights (these are CONSTANTS in backward)
+    log_weights_stopped = elbos - log_p_posterior_stopped
+    grad_weights = _compute_normalized_weights(log_weights_stopped)  # (n_obs, K)
+
+    # DReG uses SQUARED normalized weights (key difference from STL!)
+    grad_weights_squared = grad_weights ** 2  # (n_obs, K)
+
+    # KEY STEP 3a: Define model objective (correction model uses standard IWAE)
+    def model_objective(pc):
+        """Model objective: standard IWAE weighting for correction model."""
+        corr_temp = paramax.unwrap(eqx.combine(pc, static_correction))
+
+        # Recompute ELBO with current correction model params
+        elbos_recomp = _iwae_elbo_computation(
+            corr_temp, simulator_flow, x_obs_real,
+            thetas_sampled, keys_sim, int(N)
+        )
+
+        # Standard IWAE weighting (single weights, not squared)
+        weighted_terms = grad_weights * elbos_recomp
+        weighted_sum = jnp.sum(weighted_terms, axis=-1)
+
+        # Negative because we minimize negative ELBO
+        loss = -jnp.mean(weighted_sum)
+        return loss
+
+    # KEY STEP 3b: Define inference objective (flow uses DReG with squared weights)
+    def inference_objective(pf):
+        """Inference objective: DReG with SQUARED weights for flow."""
+        flow_temp = paramax.unwrap(eqx.combine(pf, static_flow))
+        corr_temp = paramax.unwrap(eqx.combine(params_correction, static_correction))
+
+        # Recompute ELBO with current params
+        elbos_recomp = _iwae_elbo_computation(
+            corr_temp, simulator_flow, x_obs_real,
+            thetas_sampled, keys_sim, int(N)
+        )
+
+        # Recompute log q(θ|x) with current flow params
+        def log_prob_batch(thetas_k, x_single):
+            return vmap(lambda t: flow_temp.log_prob(t, condition=x_single))(thetas_k)
+
+        log_q_recomp = vmap(log_prob_batch)(thetas_sampled, x_obs_real)
+
+        # DReG: Use SQUARED normalized weights (this is the key!)
+        stopped_log_weights = elbos_recomp - log_q_recomp
+        weighted_terms = grad_weights_squared * stopped_log_weights
+        weighted_sum = jnp.sum(weighted_terms, axis=-1)  # Sum over K
+
+        # Add prior term with standard weighting
+        prior_recomp = vmap(vmap(prior_log))(thetas_sampled)
+        prior_mean = jnp.mean(prior_recomp, axis=-1)
+
+        # Negative because we want to minimize negative IWAE
+        loss = -jnp.mean(weighted_sum + prior_mean)
+        return loss
+
+    # KEY STEP 4: Compute gradients separately for model and inference network
+    grad_correction = jax.grad(model_objective)(params_correction)
+    grad_flow = jax.grad(inference_objective)(params_flow)
+
+    # Scale by incoming gradient
+    grad_flow = jax.tree_map(lambda g: g * g_loss, grad_flow)
+    grad_correction = jax.tree_map(lambda g: g * g_loss, grad_correction)
+
+    # Return gradients (order must match forward inputs)
+    # None for non-differentiable inputs
+    return (
+        grad_flow, None,  # params_flow, static_flow
+        grad_correction, None,  # params_correction, static_correction
+        None, None,  # simulator_flow, prior_log
+        None, None,  # x_obs_real, key
+        None, None,  # K, N (hyperparameters)
+    )
+
 
 class MaximumLikelihoodLoss:
     """Loss for fitting a flow with maximum likelihood (negative log likelihood).
@@ -199,6 +618,7 @@ class RVNPLoss:
         n_sim_samples_per_theta: int = 32,  # Number of x_sim samples per theta in KL divergence
         prior: AbstractDistribution = None,  # Prior distribution
         empirical_bias: Array = None,  # Empirical bias for shrinkage prior (optional)
+        use_dreg: bool = False,  # Use DReG gradient estimator for variance reduction
     ):
         self.lambda_variational = lambda_variational
         self.lambda_kl = lambda_kl
@@ -208,6 +628,7 @@ class RVNPLoss:
         self.n_sim_samples_per_theta = n_sim_samples_per_theta
         self.prior = prior
         self.empirical_bias = empirical_bias
+        self.use_dreg = use_dreg
 
     @eqx.filter_jit
     def __call__(
@@ -465,8 +886,46 @@ class RVNPLoss:
         Returns:
             Scalar loss = :math:`-\mathcal{L}_{\\text{IWAE}} + \lambda_{\\text{shrinkage}} \cdot \mathcal{R}_{\\text{shrink}}`
         """
+
+        # ========================================================================
+        # DReG PATH: Use stop_gradient for variance-reduced gradients
+        # ========================================================================
+        if self.use_dreg:
+            # Compute IWAE with DReG gradient estimator
+            # This uses jax.lax.stop_gradient and squared weights directly
+            iwae_loss = _iwae_with_dreg(
+                flow, correction_model, simulator_flow, prior_log,
+                x_obs_real, key,
+                self.simulator_samples_per_theta,
+                self.n_sim_samples_per_theta,
+            )
+
+            # Compute shrinkage loss separately with standard gradients
+            shrinkage_loss = 0.0
+            if lambda_shrinkage > 0.0:
+                # Sample fresh thetas for shrinkage computation
+                n_obs = x_obs_real.shape[0]
+                K = self.simulator_samples_per_theta
+
+                key_shrink, key = jax.random.split(key)
+                keys_theta = jax.random.split(key_shrink, n_obs)
+
+                def sample_thetas_fn(x_single, k):
+                    return flow.sample(k, (K,), condition=x_single)
+
+                thetas_for_shrinkage = vmap(sample_thetas_fn)(x_obs_real, keys_theta)
+                theta_flat = thetas_for_shrinkage.reshape(-1, thetas_for_shrinkage.shape[-1])
+
+                mean_shift_magnitudes = vmap(correction_model.get_mean_shift_magnitude)(theta_flat)
+                shrinkage_loss = lambda_shrinkage * jnp.mean(mean_shift_magnitudes)
+
+            return iwae_loss + shrinkage_loss
+
+        # ========================================================================
+        # STANDARD PATH: Original IWAE implementation (no DReG)
+        # ========================================================================
         n_obs = x_obs_real.shape[0]
-                
+
         # 1. Get theta values (either from training data or sample from posterior)
         # Sample theta from posterior for each observation
         key_theta_sample, key = jax.random.split(key)

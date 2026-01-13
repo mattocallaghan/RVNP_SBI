@@ -122,9 +122,9 @@ if ! command -v python &> /dev/null; then
 fi
 
 # Check if in correct directory
-if [ ! -f "integrated_pipeline.py" ]; then
-    echo -e "${RED}Error: integrated_pipeline.py not found.${NC}"
-    echo -e "${RED}Please run from RVNP_SBI directory.${NC}"
+if [ ! -f "scripts/integrated_pipeline.py" ]; then
+    echo -e "${RED}Error: scripts/integrated_pipeline.py not found.${NC}"
+    echo -e "${RED}Please run from RVNP_SBI root directory.${NC}"
     exit 1
 fi
 

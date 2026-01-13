@@ -321,19 +321,20 @@ class Evaluator:
             where :math:`q_p` denotes the :math:`p`-th quantile of the marginal posterior.
 
         Interpretation:
-            **Ideal value**: 1.0 (perfect calibration)
+            **Ideal value**: 0.0 (perfect calibration)
                 - For every credibility level :math:`\\alpha`, the true parameter is inside
                   the :math:`\\alpha`-credible interval exactly :math:`\\alpha` fraction of the time
+                - ACAUC measures the area between the ideal curve (coverage = α) and actual coverage
 
-            **< 1.0**: Under-coverage (overconfident posterior)
-                - True parameters fall outside credible intervals more often than expected
-                - Posterior is too concentrated around the mode
-                - May indicate: insufficient correction, weak regularization, or model misspecification
+            **> 0.0**: Calibration error
+                - Higher values indicate worse calibration
+                - Can be due to either under-coverage or over-coverage
+                - ACAUC is the L1 distance between ideal and actual coverage curves
 
-            **> 1.0**: Over-coverage (too conservative)
-                - True parameters fall inside credible intervals more often than expected
-                - Posterior is too diffuse/uncertain
-                - May indicate: excessive regularization, over-correction, or lack of data
+            **Decomposition**:
+                - If actual coverage systematically < α: under-coverage (overconfident)
+                - If actual coverage systematically > α: over-coverage (too conservative)
+                - ACAUC magnitude shows total calibration error regardless of direction
 
         Algorithm:
             1. For each parameter dimension :math:`j = 1, \ldots, k`:
@@ -353,11 +354,11 @@ class Evaluator:
                            Default: 100. Higher values → more accurate integration but slower.
 
         Returns:
-            acauc: ACAUC value, a scalar in approximately [0, 2]
-                  - 1.0: Perfect calibration
-                  - [0.9, 1.1]: Good calibration
-                  - < 0.9: Significant under-coverage
-                  - > 1.1: Significant over-coverage
+            acauc: ACAUC value, a scalar in approximately [0, 1]
+                  - 0.0: Perfect calibration
+                  - < 0.05: Excellent calibration
+                  - [0.05, 0.1]: Good calibration
+                  - > 0.1: Poor calibration (significant deviation from ideal)
 
         Implementation Details:
             **Quantile Computation**:
@@ -385,12 +386,11 @@ class Evaluator:
             >>> # Compute ACAUC
             >>> acauc = Evaluator.compute_acauc(samples, theta_true, n_alpha_levels=100)
             >>> print(f"ACAUC: {acauc:.3f}")
-            ACAUC: 0.987
+            ACAUC: 0.013
 
         Interpretation:
-            acauc < 0.95 indicates under-coverage (overconfident posterior),
-            acauc > 1.05 indicates over-coverage (too conservative), and values near 1.0
-            indicate good calibration.
+            Values near 0.0 indicate good calibration. Higher values indicate calibration
+            error - the actual coverage curve deviates from the ideal (coverage = α).
 
         Notes:
             - Primary metric for evaluating RVNP calibration quality
@@ -436,9 +436,14 @@ class Evaluator:
                 is_covered = float((true_value >= lower_bound) and (true_value <= upper_bound))
                 coverage_at_alpha.append(is_covered)
 
-            # Integrate coverage over alpha using trapezoidal rule
-            coverage_auc = np.trapz(coverage_at_alpha, alpha_levels)
-            acauc_per_dim.append(coverage_auc)
+            # Compute calibration error: |alpha - coverage(alpha)|
+            # For perfect calibration, coverage(alpha) = alpha, so error = 0
+            calibration_error = [abs(alpha - cov) for alpha, cov in zip(alpha_levels, coverage_at_alpha)]
+
+            # Integrate calibration error over alpha using trapezoidal rule
+            # ACAUC = ∫₀¹ |α - 𝟙[θ ∈ Θ̃(α)]| dα
+            acauc_dim = np.trapz(calibration_error, alpha_levels)
+            acauc_per_dim.append(acauc_dim)
 
         # Average across all dimensions
         acauc = np.mean(acauc_per_dim)

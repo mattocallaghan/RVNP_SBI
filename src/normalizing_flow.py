@@ -651,6 +651,7 @@ class Rational_Quadratic_Spline_w_posterior(Normalizing_Flow):
             n_sim_samples_per_theta=getattr(self.config.model, 'n_sim_samples_per_theta', 32),
             prior=self.prior,
             empirical_bias=self.empirical_bias,
+            use_dreg=getattr(self.config.training, 'use_dreg', False),
         )
 
         # Partition parameters for both flow and correction model
@@ -1605,10 +1606,12 @@ class RANPT(Normalizing_Flow):
             self.embedding = None
         
         # Initialize correction model (will be loaded)
+        from .models.correction_model import SimpleCorrectionModel, DiagonalNeuralCorrectionModel, HybridCorrectionModel, MuHybridCorrectionModel, GlobalCorrectionModel, FullNeuralCorrectionModel
+
         self.key, subkey = jr.split(self.key)
         correction_type = self.correction_model_name
         correction_dim = self.embedding_dim if self.use_embeddings else config.data.vector_dim
-        
+
         if correction_type == 'simple':
             self.correction_model = SimpleCorrectionModel(key=subkey, dim=correction_dim)
         elif correction_type == 'diagonal_neural':

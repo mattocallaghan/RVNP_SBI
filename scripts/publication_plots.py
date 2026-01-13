@@ -22,6 +22,7 @@ class PublicationPlotter:
         'RVNP-simple': {'label': 'RVNP (diagonal cov)', 'color': '#2E86AB', 'marker': 'o', 'linestyle': '-'},
         'RVNP-NN': {'label': 'RVNP (neural mean+cov)', 'color': '#A23B72', 'marker': 's', 'linestyle': '-'},
         'NPE': {'label': 'NPE', 'color': '#6A994E', 'marker': 'D', 'linestyle': '--'},
+        'NNPE': {'label': 'NNPE (noisy)', 'color': '#F18F01', 'marker': '^', 'linestyle': '-.'},
     }
 
     # Task display names
@@ -363,6 +364,138 @@ class PublicationPlotter:
 
         return summary_df
 
+    def plot_sampling_comparison(self, task: str, save_path: Optional[str] = None):
+        """
+        Create 4-panel plot comparing standard sampling vs SIR for a single task.
+
+        Shows both sampling methods side-by-side for each metric to highlight
+        the differences between standard variational sampling and SIR.
+
+        Args:
+            task: Task name (CS, SIR, Pendulum, Spectra)
+            save_path: Path to save figure (optional)
+        """
+        # Get both standard and SIR data
+        standard_df = self.df[
+            (self.df['task'] == task) &
+            (self.df['use_sir'] == False)
+        ].copy()
+
+        sir_df = self.df[
+            (self.df['task'] == task) &
+            (self.df['use_sir'] == True)
+        ].copy()
+
+        if standard_df.empty and sir_df.empty:
+            print(f"No data found for task: {task}")
+            return None
+
+        # Create figure
+        fig, axes = plt.subplots(2, 2, figsize=(14, 11))
+        fig.patch.set_facecolor('white')
+
+        # Define sampling method styles
+        SAMPLING_STYLES = {
+            'standard': {'label': 'Standard', 'linestyle': '-', 'alpha': 0.85},
+            'sir': {'label': 'SIR', 'linestyle': '--', 'alpha': 0.75, 'linewidth': 2.0}
+        }
+
+        # Plot each metric
+        for ax, metric_info in zip(axes.flat, [
+            ('acauc_mean', 'acauc_std', 'ACAUC', 'Coverage Area Under Curve'),
+            ('lpp_median', 'lpp_std', 'LPP', 'Log Posterior Probability'),
+            ('nrmse_mean', 'nrmse_std', 'NRMSE', 'Parameter Estimation Accuracy'),
+            ('ess_mean', None, 'ESS', 'Effective Sample Size (SIR only)')
+        ]):
+            mean_col, std_col, ylabel, title = metric_info
+
+            # Plot each method with both sampling types
+            for method in sorted(standard_df['method'].unique()):
+                if method not in self.METHOD_STYLES:
+                    continue
+
+                style = self.METHOD_STYLES[method]
+
+                # Standard sampling (solid line)
+                if not standard_df.empty:
+                    method_std_df = standard_df[standard_df['method'] == method].sort_values('nobs')
+                    if not method_std_df.empty and mean_col in method_std_df.columns:
+                        yerr = method_std_df[std_col] if std_col and std_col in method_std_df.columns else None
+                        ax.errorbar(method_std_df['nobs'], method_std_df[mean_col],
+                                   yerr=yerr,
+                                   label=f"{style['label']} (Std)",
+                                   color=style['color'],
+                                   marker=style['marker'],
+                                   linestyle=SAMPLING_STYLES['standard']['linestyle'],
+                                   markersize=8,
+                                   linewidth=2.5,
+                                   capsize=4,
+                                   alpha=SAMPLING_STYLES['standard']['alpha'])
+
+                # SIR sampling (dashed line)
+                if not sir_df.empty:
+                    method_sir_df = sir_df[sir_df['method'] == method].sort_values('nobs')
+                    if not method_sir_df.empty and mean_col in method_sir_df.columns:
+                        yerr = method_sir_df[std_col] if std_col and std_col in method_sir_df.columns else None
+                        ax.errorbar(method_sir_df['nobs'], method_sir_df[mean_col],
+                                   yerr=yerr,
+                                   label=f"{style['label']} (SIR)",
+                                   color=style['color'],
+                                   marker=style['marker'],
+                                   linestyle=SAMPLING_STYLES['sir']['linestyle'],
+                                   markersize=7,
+                                   linewidth=SAMPLING_STYLES['sir']['linewidth'],
+                                   capsize=4,
+                                   alpha=SAMPLING_STYLES['sir']['alpha'])
+
+            ax.set_xlabel(r'$N_{\mathrm{obs}}$ (Number of Observations)', fontweight='bold')
+            ax.set_ylabel(ylabel, fontweight='bold')
+            ax.set_title(title, fontweight='bold')
+            ax.set_xscale('log')
+            ax.grid(True, alpha=0.3)
+
+            # Add reference lines for specific metrics
+            if mean_col == 'acauc_mean':
+                ax.axhspan(0.9, 1.1, alpha=0.1, color='green', label='Ideal range')
+
+            # Only show legend on first subplot
+            if ax == axes[0, 0]:
+                ax.legend(loc='best', framealpha=0.95, fontsize=8, ncol=2)
+
+        # Add overall title
+        task_name = self.TASK_NAMES.get(task, task)
+        fig.suptitle(f'{task_name}: Sampling Method Comparison (Standard vs SIR)',
+                    fontsize=16, fontweight='bold', y=0.995)
+
+        plt.tight_layout(rect=[0, 0, 1, 0.98])
+
+        if save_path:
+            plt.savefig(save_path, dpi=300, bbox_inches='tight', facecolor='white')
+            print(f"Sampling comparison plot saved to: {save_path}")
+
+        plt.show()
+        return fig
+
+    def plot_all_sampling_comparisons(self, save_dir: Optional[str] = None):
+        """
+        Create sampling comparison plots for all tasks in the database.
+
+        Args:
+            save_dir: Directory to save plots (optional)
+        """
+        if save_dir:
+            save_dir = Path(save_dir)
+            save_dir.mkdir(exist_ok=True, parents=True)
+
+        tasks = self.df['task'].unique()
+
+        for task in tasks:
+            print(f"\nGenerating sampling comparison plot for {task}...")
+            save_path = None
+            if save_dir:
+                save_path = save_dir / f'{task}_sampling_comparison.png'
+            self.plot_sampling_comparison(task, save_path=save_path)
+
 
 def main():
     """Main entry point for publication plotting."""
@@ -378,7 +511,7 @@ def main():
                        choices=['CS', 'SIR', 'Pendulum', 'Spectra', 'all'],
                        help='Task to plot (or "all" for all tasks)')
     parser.add_argument('--method', type=str,
-                       choices=['RVNP-simple', 'RVNP-NN', 'NPE'],
+                       choices=['RVNP-simple', 'RVNP-NN', 'NPE', 'NNPE'],
                        help='Plot method comparison across tasks')
     parser.add_argument('--save-dir', type=str, default='publication_plots',
                        help='Directory to save plots')

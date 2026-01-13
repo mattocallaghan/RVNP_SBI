@@ -128,9 +128,9 @@ if ! command -v python &> /dev/null; then
 fi
 
 # Check if in correct directory
-if [ ! -f "main_train_eval.py" ]; then
-    echo -e "${RED}Error: main_train_eval.py not found.${NC}"
-    echo -e "${RED}Please run from RVNP_SBI directory.${NC}"
+if [ ! -f "scripts/main_train_eval.py" ]; then
+    echo -e "${RED}Error: scripts/main_train_eval.py not found.${NC}"
+    echo -e "${RED}Please run from RVNP_SBI root directory.${NC}"
     exit 1
 fi
 

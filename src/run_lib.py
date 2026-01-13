@@ -1,4 +1,7 @@
-"""Training and evaluation for RVNP - Refactored with improved structure."""
+"""Training and evaluation for RVNP - Refactored with improved structure.
+In the exp config, are these number of experiments and points per experiment the same as before?
+Is it actually working as intended?
+"""
 
 import jax
 import jax.numpy as jnp
@@ -6,7 +9,6 @@ import os
 from . import datasets
 from . import normalizing_flow
 from .training_utils import ExperimentConfig, TrainingLogger, validate_config, format_experiment_name
-
 os.environ["JAX_PLATFORM_NAME"] = "gpu"
 
 

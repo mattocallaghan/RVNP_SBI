@@ -11,6 +11,7 @@ def get_config():
     config.training = ConfigDict()
     config.training.batch_size = 16*2*2
     config.training.n_iters = 200           # Total number of training iterations.
+    config.training.use_dreg = False        # Use DReG (Doubly Reparameterized Gradient) for variance reduction
     config.training.train=True   #T/F
     config.training.max_patience=80
     config.training.validation_split=0.1

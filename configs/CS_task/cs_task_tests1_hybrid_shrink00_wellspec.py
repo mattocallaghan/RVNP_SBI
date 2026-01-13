@@ -16,7 +16,7 @@ def get_config():
     config.data.num_tests=1
     config.data.num_iid=1
     config.data.inference_simulations = int(config.data.num_tests*config.data.num_iid) 
-    config.model.correction_type = 'hybrid'  # 'simple', 'diagonal_neural', or 'hybrid'
+    config.model.correction_type = 'NN'  # 'simple', 'diagonal_neural', or 'hybrid'
     config.model.lambda_shrinkage = 0.0
     config.model.wellspec = True  # Flag for well-specified evaluation to distinguish model names
     

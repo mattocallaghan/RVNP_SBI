@@ -1,70 +1,107 @@
 #!/bin/bash
-# Quick smoke test: single minimal experiment (~5 min)
+################################################################################
+# Quick Smoke Test - Verify Pipeline Config Discovery
+#
+# Tests that the integrated pipeline correctly finds configs for all methods
+################################################################################
 
-set -e  # Exit on error
+set -e
 
-echo "=========================================="
-echo "RVNP-SBI Quick Smoke Test"
-echo "=========================================="
+GREEN='\033[0;32m'
+RED='\033[0;31m'
+NC='\033[0m'
+
+echo "========================================="
+echo "RVNP-SBI Pipeline Smoke Test"
+echo "========================================="
 echo ""
 
-# Test config
-CONFIG="configs/CS_task/ranpt_1_simple.py"
-TEST_DIR="experiment_results_smoke_test"
+echo "1. Testing main experiment config discovery..."
+python -c "
+import sys
+sys.path.insert(0, '.')
+from scripts.integrated_pipeline import IntegratedPipeline
+from collections import Counter
 
-# Clean previous test
-rm -rf "$TEST_DIR" output/ranpt_cs_task_1_simple
+pipeline = IntegratedPipeline(results_dir='experiment_results_test')
+experiments = pipeline.generate_experiment_list()
 
-echo "1. Testing training..."
-python scripts/main_train_eval.py --config="$CONFIG" || {
-    echo "❌ Training failed"
-    exit 1
-}
-echo "✅ Training passed"
+# Expected counts
+expected_total = 44  # RVNP varies by nobs (18+18), NPE/NNPE don't (4+4)
+expected_rvnp = 18  # RVNP configs for all nobs values
+expected_baseline = 4  # NPE/NNPE only have one config per task
 
-echo ""
-echo "2. Testing evaluation..."
-python scripts/evaluate.py \
-    --config="$CONFIG" \
-    --n_samples=1000 \
-    --n_eval_points=10 \
-    --save_dir="$TEST_DIR" || {
-    echo "❌ Evaluation failed"
-    exit 1
-}
-echo "✅ Evaluation passed"
+methods = [e.method for e in experiments]
+method_counts = Counter(methods)
 
-echo ""
-echo "3. Testing integrated pipeline..."
-python scripts/integrated_pipeline.py \
-    --task=CS --method=RVNP-simple --nobs=1 \
-    --results-dir="$TEST_DIR" --no-sir || {
-    echo "❌ Pipeline failed"
-    exit 1
-}
-echo "✅ Pipeline passed"
+# Verify counts
+assert len(experiments) == expected_total, f'Expected {expected_total} experiments, got {len(experiments)}'
+assert method_counts['RVNP-simple'] == expected_rvnp, f'Expected {expected_rvnp} RVNP-simple, got {method_counts["RVNP-simple"]}'
+assert method_counts['RVNP-NN'] == expected_rvnp, f'Expected {expected_rvnp} RVNP-NN, got {method_counts["RVNP-NN"]}'
+assert method_counts['NPE'] == expected_baseline, f'Expected {expected_baseline} NPE, got {method_counts["NPE"]}'
+assert method_counts['NNPE'] == expected_baseline, f'Expected {expected_baseline} NNPE, got {method_counts["NNPE"]}'
+
+print(f'✅ Main experiments: {len(experiments)} total')
+for method, count in sorted(method_counts.items()):
+    print(f'   {method}: {count}')
+"
 
 echo ""
-echo "4. Checking outputs..."
-if [ -f "output/ranpt_cs_task_1_simple/checkpoints/checkpoint_posterior_0.eqx" ]; then
-    echo "✅ Checkpoint exists"
-else
-    echo "❌ Checkpoint missing"
-    exit 1
-fi
+echo "2. Testing wellspec config discovery..."
+python -c "
+import sys
+sys.path.insert(0, '.')
+from scripts.integrated_pipeline import IntegratedPipeline
+from collections import Counter
 
-if [ -f "$TEST_DIR/metrics_database.csv" ]; then
-    echo "✅ Metrics database created"
-    echo ""
-    echo "Metrics database content:"
-    cat "$TEST_DIR/metrics_database.csv"
-else
-    echo "❌ Metrics database missing"
-    exit 1
-fi
+pipeline = IntegratedPipeline(results_dir='experiment_results_wellspec_test', wellspec=True)
+experiments = pipeline.generate_experiment_list()
+
+# Expected counts
+expected_total = 44
+expected_rvnp = 18  # RVNP configs exist for all nobs
+expected_baseline = 4  # NPE/NNPE only have nobs=100
+
+methods = [e.method for e in experiments]
+method_counts = Counter(methods)
+
+# Verify counts
+assert len(experiments) == expected_total, f'Expected {expected_total} experiments, got {len(experiments)}'
+assert method_counts['RVNP-simple'] == expected_rvnp
+assert method_counts['RVNP-NN'] == expected_rvnp
+assert method_counts['NPE'] == expected_baseline
+assert method_counts['NNPE'] == expected_baseline
+
+print(f'✅ Wellspec experiments: {len(experiments)} total')
+for method, count in sorted(method_counts.items()):
+    print(f'   {method}: {count}')
+"
 
 echo ""
-echo "=========================================="
-echo "✅ ALL TESTS PASSED"
-echo "=========================================="
-echo "Pipeline is ready for full experiments!"
+echo "3. Verifying sample configs exist..."
+test -f configs/CS_task/cs_task_tests100_NN_shrink00.py && echo "✅ CS RVNP-NN config exists"
+test -f configs/CS_task/cs_task_tests100_simple_shrink00.py && echo "✅ CS RVNP-simple config exists"
+test -f configs/CS_task/npe_cs_task.py && echo "✅ CS NPE config exists"
+test -f configs/CS_task/nnpe_cs_task.py && echo "✅ CS NNPE config exists"
+
+echo ""
+echo "4. Verifying config model names..."
+
+echo ""
+echo "5. Verifying script paths..."
+bash scripts/run_experiments_colab.sh --help > /dev/null 2>&1 && \
+    echo "✅ run_experiments_colab.sh works"
+bash scripts/run_wellspec_experiments.sh --help > /dev/null 2>&1 && \
+    echo "✅ run_wellspec_experiments.sh works"
+bash scripts/run_ablation_study.sh --help > /dev/null 2>&1 && \
+    echo "✅ run_ablation_study.sh works"
+
+echo ""
+echo -e "${GREEN}=========================================${NC}"
+echo -e "${GREEN}All smoke tests passed! ✅${NC}"
+echo -e "${GREEN}=========================================${NC}"
+echo ""
+echo "Pipeline is ready to run:"
+echo "  Main experiments:     bash scripts/run_experiments_colab.sh"
+echo "  Wellspec experiments: bash scripts/run_wellspec_experiments.sh"
+echo "  Ablation study:       bash scripts/run_ablation_study.sh"

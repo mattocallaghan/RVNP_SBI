@@ -1,29 +1,27 @@
 from configs.Pendulum.pendulum_task import get_config as get_base_config
 
 """
-Pendulum Task configuration variant: tests100_simple_shrink00
-Inherits from base pendulum_task.py and overrides specific variable terms
+Pendulum Task: RVNP-simple with nobs=100, lambda_shrinkage=0.0
 """
 
 def get_config():
-    # Get base configuration from pendulum_task.py
     config = get_base_config()
-    
-    #################################
-    # Variable terms (override only these)
-    #################################    
+
+    # Experiment-specific overrides
     config.data.num_tests = 100
-    config.model.correction_type = 'simple'  # 'simple', 'diagonal_neural', or 'hybrid'
+    config.data.num_iid = 1
+    config.data.inference_simulations = 100
+
+    config.model.correction_type = 'simple'
     config.model.lambda_shrinkage = 0.0
-    config.data.num_iid=1
-    config.data.num_tests = 100
-    config.data.inference_simulations = int(config.data.num_tests*config.data.num_iid)
-    config.training.batch_size = 2**12
-    config.training.final_epochs=500  # Epochs for stage 5 (main training)
-    config.training.final_posterior_epochs=0  # Epochs for stage 6 (final posterior tuning)
-    config.model.train_simulator=False
-    config.model.train_embeddings=False
-    # Update workspace to reflect the specific configuration
-    config.training.workspace = 'output/pendulum_task_tests100_simple_shrink00'
-    
+
+    # Workspace
+    config.training.workspace = 'output/pendulum_task_tests100_simple'
+
+    # Medium/Large dataset parameters
+    config.model.K_obs_samples = 30
+    config.model.simulator_samples_per_theta = 32
+    config.training.final_epochs = 300
+    config.training.final_posterior_epochs = 100
+
     return config

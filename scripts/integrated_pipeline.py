@@ -57,11 +57,11 @@ class IntegratedPipeline:
     TASKS = ['CS', 'SIR', 'Pendulum', 'Spectra']
     NOBS_VALUES = [1, 10, 100, 1000, 10000]
 
-    # Methods to compare (user wants to focus on these)
     METHODS = [
-        ('RVNP-simple', 'ranpt', 'simple'),
-        ('RVNP-NN', 'ranpt', 'NN'),
+        ('RVNP-simple', 'rvnp', 'simple'),
+        ('RVNP-NN', 'rvnp', 'NN'),  # Neural mean + covariance correction
         ('NPE', 'npe', 'none'),
+        ('NNPE', 'nnpe', 'none'),  # Noisy NPE baseline
     ]
 
     def __init__(self,
@@ -129,12 +129,16 @@ class IntegratedPipeline:
         for task in self.TASKS:
             # Determine valid Nobs for this task
             if task == 'Spectra':
-                valid_nobs = [1, 10, 100]  # Limited by real data
+                valid_nobs = [1, 10, 100,1000]  # Limited by real data
             else:
                 valid_nobs = self.NOBS_VALUES
 
             for nobs in valid_nobs:
                 for method_name, model_name, correction_type in self.METHODS:
+                    # NPE and NNPE baselines don't vary by nobs - only include once per task
+                    if model_name in ['npe', 'nnpe'] and nobs != 100:
+                        continue
+
                     # Find config file
                     config_file = self._find_config_file(task, model_name, correction_type, nobs)
 
@@ -168,26 +172,42 @@ class IntegratedPipeline:
 
         # Build config filename
         if self.wellspec:
-            # Well-specified configs use different naming pattern
-            # Pattern: {task}_task_tests{nobs}_{correction_type}_shrink00_wellspec.py
+            # Well-specified configs use pattern: {task}_task_tests{nobs}_{correction}_shrink00_wellspec.py
             task_lower = task.lower()
             if model_name == 'npe':
                 config_name = f"npe_{task_lower}_task_tests{nobs}_wellspec.py"
-            elif model_name == 'ranpt':
-                # For RANPT, use 'hybrid' in filename even for mu_hybrid
-                # (wellspec configs were created before mu_hybrid naming)
+            elif model_name == 'nnpe':
+                config_name = f"nnpe_{task_lower}_task_tests{nobs}_wellspec.py"
+            elif model_name == 'rvnp':
+                # RVNP wellspec configs still use 'hybrid' in filename for NN correction
                 correction_for_file = 'hybrid' if correction_type == 'NN' else correction_type
                 config_name = f"{task_lower}_task_tests{nobs}_{correction_for_file}_shrink00_wellspec.py"
             else:
                 return None
         else:
-            # Standard configs
+            # Standard configs use pattern: {task}_tests{nobs}_{correction}_shrink00.py
             if model_name == 'npe':
-                # NPE configs
                 config_name = f"npe_{task.lower()}_task.py"
-            elif model_name == 'ranpt':
-                # RVNP configs
-                config_name = f"ranpt_{nobs}_{correction_type}.py"
+            elif model_name == 'nnpe':
+                config_name = f"nnpe_{task.lower()}_task.py"
+            elif model_name == 'rvnp':
+                # RVNP configs with new naming convention
+                # CS: cs_task_tests{nobs}_{correction}_shrink00.py
+                # SIR: sir_tests{nobs}_{correction}_shrink00.py
+                # Pendulum: pendulum_task_tests{nobs}_{correction}_shrink00.py
+                # Spectra: spectra_tests{nobs}_{correction}_shrink00.py
+                if task == 'CS':
+                    task_prefix = 'cs_task'
+                elif task == 'SIR':
+                    task_prefix = 'sir'
+                elif task == 'Pendulum':
+                    task_prefix = 'pendulum_task'
+                elif task == 'Spectra':
+                    task_prefix = 'spectra'
+                else:
+                    return None
+
+                config_name = f"{task_prefix}_tests{nobs}_{correction_type}_shrink00.py"
             else:
                 return None
 
@@ -395,7 +415,7 @@ class IntegratedPipeline:
         # Try different naming patterns
         possible_names = [
             f'{exp.task}_{exp.method.split("-")[0].lower()}_n{exp.nobs}{sir_suffix}_results.csv',
-            f'{exp.task}_ranpt_n{exp.nobs}{sir_suffix}_results.csv',
+            f'{exp.task}_rvnp_n{exp.nobs}{sir_suffix}_results.csv',
             f'{exp.task}_npe_n{exp.nobs}{sir_suffix}_results.csv',
         ]
 
@@ -460,7 +480,8 @@ class IntegratedPipeline:
                 filter_nobs: Optional[int] = None,
                 use_sir: bool = True,
                 skip_training: bool = False,
-                skip_evaluation: bool = False):
+                skip_evaluation: bool = False,
+                run_both_sampling_methods: bool = True):
         """
         Run complete pipeline for all experiments.
 
@@ -468,9 +489,10 @@ class IntegratedPipeline:
             filter_task: Optional task filter
             filter_method: Optional method filter
             filter_nobs: Optional nobs filter
-            use_sir: Whether to run SIR evaluation
+            use_sir: Whether to run SIR evaluation (deprecated, use run_both_sampling_methods)
             skip_training: Skip training stage
             skip_evaluation: Skip evaluation stage
+            run_both_sampling_methods: If True, run BOTH standard and SIR sampling (default: True)
         """
         logger.info("=" * 80)
         logger.info("INTEGRATED PIPELINE - ICML 2026")
@@ -490,7 +512,10 @@ class IntegratedPipeline:
         logger.info(f"Running {len(experiments)} experiments")
         logger.info(f"  Training: {'skipped' if skip_training else 'enabled'}")
         logger.info(f"  Evaluation: {'skipped' if skip_evaluation else 'enabled'}")
-        logger.info(f"  SIR: {'enabled' if use_sir else 'disabled'}")
+        if run_both_sampling_methods:
+            logger.info(f"  Sampling: BOTH standard and SIR (comprehensive comparison)")
+        else:
+            logger.info(f"  Sampling: {'SIR only' if use_sir else 'Standard only'}")
         logger.info("")
 
         # Track statistics
@@ -523,18 +548,20 @@ class IntegratedPipeline:
 
             # Evaluation
             if not skip_evaluation:
-                # Regular evaluation
+                # Standard variational sampling evaluation (always run)
                 if self.run_evaluation(exp, use_sir=False):
                     stats['evaluation_success'] += 1
                 else:
                     stats['evaluation_failed'] += 1
 
-                # SIR evaluation
-                if use_sir:
+                # SIR evaluation (run if requested)
+                if run_both_sampling_methods or use_sir:
                     if self.run_evaluation(exp, use_sir=True):
                         stats['sir_success'] += 1
                     else:
                         stats['sir_failed'] += 1
+                else:
+                    stats['sir_skipped'] += 1
             else:
                 stats['evaluation_skipped'] += 1
                 stats['sir_skipped'] += 1
