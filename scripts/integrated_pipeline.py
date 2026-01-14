@@ -179,9 +179,8 @@ class IntegratedPipeline:
             elif model_name == 'nnpe':
                 config_name = f"nnpe_{task_lower}_task_tests{nobs}_wellspec.py"
             elif model_name == 'rvnp':
-                # RVNP wellspec configs still use 'hybrid' in filename for NN correction
-                correction_for_file = 'hybrid' if correction_type == 'NN' else correction_type
-                config_name = f"{task_lower}_task_tests{nobs}_{correction_for_file}_shrink00_wellspec.py"
+                # RVNP wellspec configs use correction_type directly in filename
+                config_name = f"{task_lower}_task_tests{nobs}_{correction_type}_shrink00_wellspec.py"
             else:
                 return None
         else:

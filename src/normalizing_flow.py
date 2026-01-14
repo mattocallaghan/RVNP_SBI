@@ -27,6 +27,13 @@ from .model_utils import (
     create_correction_model,
     create_embedding_models
 )
+from .models.correction_model import (
+    SimpleCorrectionModel,
+    GlobalCorrectionModel,
+    HybridCorrectionModel,
+    FullNeuralCorrectionModel,
+    MuHybridCorrectionModel
+)
 
 
 
@@ -57,7 +64,6 @@ class Normalizing_Flow(abc.ABC):
         self.config = config
         self.train_bool = config.training.train
         self.optimizer = get_optimizer(config)
-        #self.loss_function = G23_Loss()
         self.loss_function=MaximumLikelihoodLoss()
         self.mean = None
         self.std = None
@@ -193,7 +199,7 @@ class Rational_Quadratic_Spline_w_posterior(Normalizing_Flow):
             key=subkey,
             cond_dim=self.flow_dimension,  # Conditional on θ parameters
             base_dist=Normal(jnp.zeros(flow_cond_dim), jnp.ones(flow_cond_dim)),  # Output x dimension
-            transformer=RationalQuadraticSpline(knots=15, interval=10), #the interval is set because of the bounds of the data, maybe later could be worth scaling to 0,1 or changing architecture
+            transformer=RationalQuadraticSpline(knots=10, interval=10), #the interval is set because of the bounds of the data, maybe later could be worth scaling to 0,1 or changing architecture
             flow_layers=self.nn_depth-1,
             nn_width=self.nn_block_dim,
             invert=False #prioritise sampling
@@ -432,11 +438,19 @@ class Rational_Quadratic_Spline_w_posterior(Normalizing_Flow):
 
     def train_simulator(self, key, simulator_flow, train_data):
         """Train the simulator emulator p(x|θ) using maximum likelihood."""
-        # Add config check BEFORE file existence check
-        if not getattr(self.config.model, 'train_simulator', True):
-            print("Simulator training disabled by config (train_simulator=False).")
+        # Check if simulator file exists
+        simulator_exists = os.path.exists(self.file_name_simulator)
+
+        # Skip training only if file exists AND train_simulator is False
+        if simulator_exists and not getattr(self.config.model, 'train_simulator', True):
+            print(f"Simulator already exists at {self.file_name_simulator} and train_simulator=False. Using existing simulator.")
             return key, simulator_flow
-        print("Training simulator emulator p(x|θ) from scratch...")
+
+        # Train if: file doesn't exist OR train_simulator is True
+        if not simulator_exists:
+            print(f"Simulator file not found. Training simulator emulator p(x|θ) from scratch...")
+        else:
+            print("Retraining simulator emulator p(x|θ) (train_simulator=True)...")
         # Initialize simulator parameters
         params_simulator, static_simulator = eqx.partition(
             simulator_flow, 
@@ -647,11 +661,11 @@ class Rational_Quadratic_Spline_w_posterior(Normalizing_Flow):
             lambda_kl=getattr(self.config.model, 'lambda_kl', 1.0),
             lambda_shrinkage=self.config.model.lambda_shrinkage,
             lambda_entropy=self.config.model.lambda_entropy,
-            simulator_samples_per_theta=getattr(self.config.model, 'simulator_samples_per_theta', 100),
+            simulator_samples_per_theta=getattr(self.config.model, 'simulator_samples_per_theta', 32),
             n_sim_samples_per_theta=getattr(self.config.model, 'n_sim_samples_per_theta', 32),
             prior=self.prior,
             empirical_bias=self.empirical_bias,
-            use_dreg=getattr(self.config.training, 'use_dreg', False),
+            use_dreg=getattr(self.config.training, 'use_dreg', True), #default to dreg use
         )
 
         # Partition parameters for both flow and correction model
@@ -757,34 +771,28 @@ class Rational_Quadratic_Spline_w_posterior(Normalizing_Flow):
             avg_train_loss = sum(train_losses) / len(train_losses) if train_losses else float('inf')
             losses["train"].append(avg_train_loss)
             
-            # Monitor correction model covariance matrix and loss components
+            # Monitor correction model and loss
             if epoch % 20 == 0:  # Print every 20 epochs to reduce clutter
-                if hasattr(self, 'correction_model') and self.correction_model is not None:
-                    correction_combined = eqx.combine(params_correction, static_correction)
-                    from .models.correction_model import HybridCorrectionModel, FullNeuralCorrectionModel, MuHybridCorrectionModel, GlobalCorrectionModel
-                    if isinstance(correction_combined, GlobalCorrectionModel):
-                        # GlobalCorrectionModel - no theta dependence
-                        cov_matrix = correction_combined.get_covariance_matrix()
-                        print(f"  Epoch {epoch}: Global covariance matrix =")
-                        print(f"    {cov_matrix}")
-                        print(f"  Global mean shift: {correction_combined.mu_global}")
-                    elif isinstance(correction_combined, (HybridCorrectionModel, MuHybridCorrectionModel, FullNeuralCorrectionModel)):
-                        # Create dummy theta for covariance matrix evaluation
-                        dummy_theta = jnp.zeros(self.flow_dimension)
-                        cov_matrix = correction_combined.get_covariance_matrix(dummy_theta)
-                        if isinstance(correction_combined, HybridCorrectionModel):
-                            model_type = "Hybrid"
-                        elif isinstance(correction_combined, MuHybridCorrectionModel):
-                            model_type = "Mu-Hybrid"
-                        else:
-                            model_type = "Full Neural"
-                        print(f"  Epoch {epoch}: {model_type} covariance matrix (at theta=0) =")
-                        print(f"    {cov_matrix}")
-                    elif hasattr(correction_combined, 'get_covariance_matrix'):
-                        cov_matrix = correction_combined.get_covariance_matrix()
-                        print(f"  Epoch {epoch}: Covariance matrix =")
-                        print(f"    {cov_matrix}")
-                    print(f"  Epoch {epoch}: Loss = {avg_train_loss:.6f}")
+                correction_combined = eqx.combine(params_correction, static_correction)
+
+                # Get covariance matrix (theta-dependent models need dummy theta)
+                if isinstance(correction_combined, GlobalCorrectionModel):
+                    cov_matrix = correction_combined.get_covariance_matrix()
+                    print(f"  Epoch {epoch}: Global correction covariance =")
+                    print(f"    {cov_matrix}")
+                    print(f"  Global mean shift: {correction_combined.mu_global}")
+                elif isinstance(correction_combined, SimpleCorrectionModel):
+                    cov_matrix = correction_combined.get_covariance_matrix()
+                    print(f"  Epoch {epoch}: Simple correction covariance =")
+                    print(f"    {cov_matrix}")
+                elif isinstance(correction_combined, (MuHybridCorrectionModel, FullNeuralCorrectionModel, HybridCorrectionModel)):
+                    dummy_theta = jnp.zeros(self.flow_dimension)
+                    cov_matrix = correction_combined.get_covariance_matrix(dummy_theta)
+                    model_type = "NN" if isinstance(correction_combined, MuHybridCorrectionModel) else "Neural"
+                    print(f"  Epoch {epoch}: {model_type} correction covariance (at θ=0) =")
+                    print(f"    {cov_matrix}")
+
+                print(f"  Epoch {epoch}: Loss = {avg_train_loss:.6f}")
                         
                 # Monitor individual loss components on a sample batch
 
@@ -1497,459 +1505,3 @@ class NPE(Normalizing_Flow):
         flow = eqx.combine(best_params, static_flow)
         return key, flow
 
-
-@register_flow(name='ranpt')
-class RANPT(Normalizing_Flow):
-    """
-    Robust Amortized Neural Posterior Training (RANPT).
-    
-    Loads pre-trained embeddings and correction model from RQS training,
-    then trains posterior using the pre-trained correction model for data augmentation.
-    """
-    
-    def __init__(self, config, key, data=None, eval_data=None, mean=None, std=None, experiment_idx=None):
-        super().__init__(config)
-        self.key, self.subkey = jr.split(key)
-        
-        # Model architecture parameters
-        self.nn_depth = config.model.nn_depth_bnaf
-        self.nn_block_dim = config.model.nn_block_dim
-        self.cond_dim = config.model.cond_dim
-        self.activation = get_activation(config)
-        self.flow_dimension = config.model.flow_dimension
-        
-        # RANPT-specific parameters
-        self.correction_model_name = config.model.correction_model_name  # Which correction model to load
-        
-        # File paths for loading pre-trained components
-        # Use the original RQS model name for loading embeddings and correction model
-        rqs_base_shared = f"nlpe_rqs_posterior_{config.data.dataset}_{config.data.num_simulations}"
-        weights_folder = os.path.join(config.data.data_path, f"{config.data.dataset}_weights")
-        
-        self.file_name_embedding = os.path.join(weights_folder, f"embedding_{rqs_base_shared}.eqx")
-        self.file_name_decoder = os.path.join(weights_folder, f"decoder_{rqs_base_shared}.eqx")
-        self.file_name_discriminator = os.path.join(weights_folder, f"discriminator_{rqs_base_shared}.eqx")
-        self.file_name_embedding_stats = os.path.join(weights_folder, f"embedding_stats_{rqs_base_shared}.npy")
-        
-        # Correction model file path - needs test suffix to match the trained correction model
-        correction_test_suffix = ""
-            # Match the correction model that was trained with the RQS class
-        correction_shrinkage = config.model.correction_lambda_shrinkage  # Shrinkage used in correction training
-        correction_type = config.model.correction_type
-        correction_test_suffix = f"_tests{config.data.num_tests}_{correction_type}_shrink{correction_shrinkage}"
-        
-        # Add experiment index for multiple experiment scenarios
-        if experiment_idx is not None:
-            correction_test_suffix += f"_exp{experiment_idx}"
-    
-        self.file_name_correction = os.path.join(weights_folder, f"correction_{rqs_base_shared}{correction_test_suffix}.eqx")
-        
-        # RQS posterior file path for initialization
-        rqs_test_suffix = ""
-        shrinkage_val = config.model.lambda_shrinkage
-        rqs_test_suffix = f"_tests{config.data.num_tests}_{correction_type}_shrink{shrinkage_val}"
-        
-        # Add experiment index for multiple experiment scenarios
-        if experiment_idx is not None:
-            rqs_test_suffix += f"_exp{experiment_idx}"
-        self.file_name_rqs_init = os.path.join(weights_folder, f"{rqs_base_shared}{rqs_test_suffix}.eqx")
-        
-        # RANPT-specific file path
-        ranpt_base_shared = f"{config.model.name}_{config.data.dataset}_{config.data.num_simulations}"
-        test_suffix = ""
-        shrinkage_val = getattr(config.model, 'lambda_shrinkage', 0.0)
-        test_suffix = f"_tests{config.data.num_tests}_ranpt_{self.correction_model_name}_shrink{shrinkage_val}"
-        
-        # Add experiment index for multiple experiment scenarios
-        if experiment_idx is not None:
-            test_suffix += f"_exp{experiment_idx}"
-        self.file_name = os.path.join(weights_folder, f"ranpt_{ranpt_base_shared}{test_suffix}.eqx")
-        
-        # Check if we use embeddings
-        self.use_embeddings = config.data.dataset in ['spectra', 'pendulum']
-        
-        if self.use_embeddings:
-            self.embedding_dim = config.model.embedding_dim
-            flow_cond_dim = self.embedding_dim
-        else:
-            flow_cond_dim = config.data.vector_dim
-        
-        self.flow_cond_dim = flow_cond_dim
-        self.key, subkey = jr.split(self.key)
-        
-        # Initialize posterior flow
-        self.flow = masked_autoregressive_flow(
-            key=subkey,
-            cond_dim=flow_cond_dim,
-            base_dist=Normal(jnp.zeros(self.flow_dimension), jnp.ones(self.flow_dimension)),
-            transformer=RationalQuadraticSpline(knots=10, interval=5),
-            flow_layers=self.nn_depth,
-            nn_width=self.nn_block_dim,
-            invert=False
-        )
-        
-        # Initialize embedding components (will be loaded)
-        if self.use_embeddings:
-            self.key, subkey = jr.split(self.key)
-            embedding_type = config.model.embedding
-            if config.data.dataset == 'spectra':
-                self.embedding = StatisticEmbedding_spectra(
-                    key=subkey, in_channels=1, how=embedding_type,
-                    hidden_scale=config.model.hidden_scale, z_dim=self.embedding_dim, dropout_rate=0.1
-                )
-            else:
-                self.embedding = StatisticEmbedding_pendulum(
-                    key=subkey, in_channels=1, how=embedding_type,
-                    hidden_scale=config.model.hidden_scale, z_dim=self.embedding_dim, dropout_rate=0.1
-                )
-        else:
-            self.embedding = None
-        
-        # Initialize correction model (will be loaded)
-        from .models.correction_model import SimpleCorrectionModel, DiagonalNeuralCorrectionModel, HybridCorrectionModel, MuHybridCorrectionModel, GlobalCorrectionModel, FullNeuralCorrectionModel
-
-        self.key, subkey = jr.split(self.key)
-        correction_type = self.correction_model_name
-        correction_dim = self.embedding_dim if self.use_embeddings else config.data.vector_dim
-
-        if correction_type == 'simple':
-            self.correction_model = SimpleCorrectionModel(key=subkey, dim=correction_dim)
-        elif correction_type == 'diagonal_neural':
-            self.correction_model = DiagonalNeuralCorrectionModel(key=subkey, theta_dim=self.flow_dimension, output_dim=correction_dim)
-        elif correction_type == 'hybrid':
-            self.correction_model = HybridCorrectionModel(key=subkey, theta_dim=self.flow_dimension, output_dim=correction_dim)
-        elif correction_type == 'NN':
-            self.correction_model = MuHybridCorrectionModel(key=subkey, theta_dim=self.flow_dimension, output_dim=correction_dim)
-        elif correction_type == 'global':
-            self.correction_model = GlobalCorrectionModel(key=subkey, output_dim=correction_dim)
-        elif correction_type == 'full_neural':
-            self.correction_model = FullNeuralCorrectionModel(key=subkey, theta_dim=self.flow_dimension, output_dim=correction_dim)
-        else:
-            raise ValueError(f"Unknown correction model type: {correction_type}")
-            
-        self.optimizer_flow = get_optimizer(self.config)
-        
-        print(f"RANPT initialized with correction_model={self.correction_model_name}")
-    
-    def build(self, train_data=None, eval_data=None, inference_data=None, mean=None, std=None):
-        """Build and train RANPT model."""
-        self.key, subkey = jr.split(self.key)
-        self.train_data = train_data
-        self.eval_data = eval_data
-        self.inference_data = inference_data
-        
-        assert(mean is not None and std is not None), "Mean and std must be provided"
-        self.mean, self.std = mean, std
-        self.inference_data = (inference_data - self.mean) / self.std
-        
-        # Compute theta bounds and empirical bias
-        all_theta = jnp.array(train_data)[..., :self.flow_dimension].reshape(-1, self.flow_dimension)
-        self.theta_min = jnp.min(all_theta, axis=0)
-        self.theta_max = jnp.max(all_theta, axis=0)
-        
-        train_x = jnp.array(train_data)[..., self.flow_dimension:]
-        inference_x = self.inference_data[..., self.flow_dimension:]
-        self.empirical_bias = jnp.mean(inference_x, axis=0) - jnp.mean(train_x.reshape(-1, train_x.shape[-1]), axis=0)
-        
-        self.prior = get_prior_from_config(self.config, subkey, mean=self.mean, std=self.std,
-                                         theta_min=self.theta_min-2.8, theta_max=self.theta_max+2.8)
-        
-        if self.train_bool:
-            # Load pre-trained embeddings
-            if self.use_embeddings:
-                print("Loading pre-trained embeddings...")
-                try:
-                    self.embedding = eqx.tree_deserialise_leaves(self.file_name_embedding, self.embedding)
-                    print(f"Loaded embedding from {self.file_name_embedding}")
-                except FileNotFoundError:
-                    raise FileNotFoundError(f"Pre-trained embedding not found: {self.file_name_embedding}")
-            
-            # Load pre-trained correction model
-            print(f"Loading pre-trained correction model ({self.correction_model_name})...")
-            try:
-                self.correction_model = eqx.tree_deserialise_leaves(self.file_name_correction, self.correction_model)
-                print(f"Loaded correction model from {self.file_name_correction}")
-            except FileNotFoundError:
-                raise FileNotFoundError(f"Pre-trained correction model not found: {self.file_name_correction}")
-            
-            # Initialize from pre-trained RQS posterior
-            print(f"Initializing RANPT posterior from RQS model...")
-            try:
-                self.flow = eqx.tree_deserialise_leaves(self.file_name_rqs_init, self.flow)
-                print(f"Initialized RANPT flow from RQS posterior: {self.file_name_rqs_init}")
-            except FileNotFoundError:
-                raise FileNotFoundError(f"Pre-trained RQS posterior not found: {self.file_name_rqs_init}. RANPT requires RQS initialization.")
-            
-            # Train RANPT posterior with correction-augmented data
-            print(f"Training RANPT posterior with {self.correction_model_name} correction model...")
-            self.key = self.train_ranpt_posterior(subkey, train_data, inference_data)
-            
-            # Save RANPT model
-            eqx.tree_serialise_leaves(self.file_name, self.flow)
-            print(f"RANPT model saved to {self.file_name}")
-
-            # Log parameter counts
-            self._log_parameter_counts()
-        else:
-            # Load trained RANPT model
-            try:
-                self.flow = eqx.tree_deserialise_leaves(self.file_name, self.flow)
-                if self.use_embeddings:
-                    self.embedding = eqx.tree_deserialise_leaves(self.file_name_embedding, self.embedding)
-                self.correction_model = eqx.tree_deserialise_leaves(self.file_name_correction, self.correction_model)
-                print(f"Loaded RANPT model from {self.file_name}")
-
-                # Log parameter counts for loaded model
-                self._log_parameter_counts()
-            except FileNotFoundError:
-                print(f"RANPT model not found: {self.file_name}. Training new model...")
-                self.key = self.train_ranpt_posterior(subkey, train_data, inference_data)
-                eqx.tree_serialise_leaves(self.file_name, self.flow)
-    
-    def train_ranpt_posterior(self, key, train_data, inference_data):
-        """Train RANPT posterior with correction model corruption."""
-        print(f"Training RANPT posterior with JIT correction model corruption...")
-        
-        # Use maximum likelihood training for RANPT with JIT corruption
-        key, self.flow = self.fit_ranpt_with_ml_loss(key, train_data)
-        
-        return key
-    
-    def apply_correction_corruption_vectorized(self, key, x_data, theta):
-        """Apply correction model as corruption using vmap for speed, generating 32 samples per (theta, x_sim) pair."""
-        batch_size = x_data.shape[0]
-        n_samples = 32  # Number of corrected samples per (theta, x_sim) pair
-        
-        # Generate keys for batch_size x n_samples  
-        # Use a different approach: split the key hierarchically
-        batch_keys = jr.split(key, batch_size)  # Shape: (batch_size, 2)
-        
-        def generate_sample_keys(batch_key):
-            return jr.split(batch_key, n_samples)  # Shape: (n_samples, 2)
-        
-        keys = jax.vmap(generate_sample_keys)(batch_keys)  # Shape: (batch_size, n_samples, 2)
-        
-        def corrupt_single_pair(x_single, theta_single, keys_for_pair):
-            """Generate 32 corrected samples for a single (theta, x) pair."""
-            
-            def corrupt_one_sample(key_single):
-                # Use correction model to generate corrected sample
-            
-                # Neural correction models need theta input
-                mu, sigma = self.correction_model(x_single[None, :], theta_single[None, :])
-                mu, sigma = mu[0], sigma[0]
-
-                
-                # Sample from correction distribution
-                if len(sigma.shape) == 1:  # Diagonal covariance
-                    corrected_sample = mu + jnp.sqrt(sigma) * jr.normal(key_single, x_single.shape)
-                else:  # Full covariance matrix
-                    L = jnp.linalg.cholesky(sigma + 1e-6 * jnp.eye(sigma.shape[0]))
-                    corrected_sample = mu + L @ jr.normal(key_single, x_single.shape)
-                
-                return corrected_sample
-            
-            # Vectorize over the 32 samples for this (theta, x) pair
-            return jax.vmap(corrupt_one_sample)(keys_for_pair)
-        
-        # Vectorize over the batch, generating 32 samples per pair
-        corrupted_samples = jax.vmap(corrupt_single_pair)(x_data, theta, keys)  # Shape: (batch_size, 32, x_dim)
-        
-        # Reshape to (batch_size * 32, x_dim)
-        corrupted_samples_flat = corrupted_samples.reshape(-1, x_data.shape[-1])
-        
-        # Repeat theta 32 times to match the corrupted samples
-        theta_repeated = jnp.repeat(theta, n_samples, axis=0)  # Shape: (batch_size * 32, theta_dim)
-        
-        # Combine theta and corrupted x samples
-        return jnp.concatenate([theta_repeated, corrupted_samples_flat], axis=-1)
-    
-    def fit_ranpt_with_ml_loss(self, key, train_data):
-        """Fit RANPT using maximum likelihood loss with JIT corruption."""
-        loss_fn = MaximumLikelihoodLoss()
-        
-        params_flow, static_flow = eqx.partition(
-            self.flow, eqx.is_inexact_array,
-            is_leaf=lambda leaf: isinstance(leaf, paramax.NonTrainable),
-        )
-        
-        if self.use_embeddings:
-            with open(self.file_name_embedding_stats, 'rb') as f:
-                embedding_stats = pickle.load(f)
-            embedding = paramax.unwrap(self.embedding)
-            p_embedding = lambda x, k: embedding(x, key=k, inference=True)
-        
-        optimizer = self.optimizer_flow
-        opt_state = optimizer.init(params_flow)
-        
-        max_epochs = self.config.training.n_iters
-        best_params = params_flow
-        best_loss = float('inf')
-        patience_counter = 0
-        max_patience = self.config.training.max_patience
-        
-        @eqx.filter_jit
-        def step(params, batch, opt_state, key_step):
-            batch = jnp.array(batch) if not isinstance(batch, jnp.ndarray) else batch
-            theta = batch[..., :self.flow_dimension]
-            x_data = batch[..., self.flow_dimension:]
-            
-            # For embedding tasks, process through embeddings FIRST, then apply correction
-            if self.use_embeddings:
-                batch_size = x_data.shape[0]
-                key_embed, key_corrupt = jr.split(key_step)
-                keys = jax.random.split(key_embed, batch_size)
-                
-                # Apply embeddings to raw data to get embedded data
-                x_embedded = jax.lax.stop_gradient(
-                    jax.vmap(p_embedding)(x_data[:, jnp.newaxis, :], keys)
-                )
-                x_embedded = (x_embedded - embedding_stats['mean']) / embedding_stats['std']
-                
-                # Apply correction model corruption to embedded data
-                expanded_batch = self.apply_correction_corruption_vectorized(key_corrupt, x_embedded, theta)
-                
-                # Extract theta and x from the expanded batch (x is already processed/embedded)
-                theta_expanded = expanded_batch[..., :self.flow_dimension]
-                x_processed = expanded_batch[..., self.flow_dimension:]
-            else:
-                # For non-embedding tasks, apply correction to raw data as before
-                key_corrupt, key_step = jr.split(key_step)
-                expanded_batch = self.apply_correction_corruption_vectorized(key_corrupt, x_data, theta)
-                
-                # Extract theta and x from the expanded batch
-                theta_expanded = expanded_batch[..., :self.flow_dimension]
-                x_processed = expanded_batch[..., self.flow_dimension:]
-            
-            loss_val, grads = eqx.filter_value_and_grad(loss_fn)(params, static_flow, theta_expanded, x_processed, None)
-            updates, opt_state = optimizer.update(grads, opt_state, params)
-            params = eqx.apply_updates(params, updates)
-            
-            return params, opt_state, loss_val
-        
-        for epoch in tqdm(range(max_epochs), desc="RANPT Training"):
-            epoch_losses = []
-            for batch_data in train_data:
-                key, subkey = jr.split(key)
-                params_flow, opt_state, loss_val = step(params_flow, batch_data, opt_state, subkey)
-                epoch_losses.append(loss_val)
-            
-            avg_loss = sum(epoch_losses) / len(epoch_losses)
-            
-            if avg_loss < best_loss:
-                best_loss = avg_loss
-                best_params = params_flow
-                patience_counter = 0
-            else:
-                patience_counter += 1
-                
-            if epoch % 50 == 0:
-                print(f"RANPT Epoch {epoch}, Loss: {avg_loss:.6f}")
-                
-            if patience_counter >= max_patience:
-                print("Early stopping for RANPT training!")
-                break
-        
-        flow = eqx.combine(best_params, static_flow)
-        return key, flow
-
-    def _log_parameter_counts(self):
-        """Log parameter counts for all model components."""
-        print("\n" + "="*80)
-        print("MODEL PARAMETER BREAKDOWN")
-        print("="*80)
-
-        # Get comprehensive breakdown
-        breakdown = get_ranpt_model_breakdown(self)
-
-        # Print it
-        print_parameter_breakdown(breakdown)
-
-        # Save to file in workspace
-        if hasattr(self, 'workspace_path'):
-            param_file = os.path.join(self.workspace_path, 'parameter_breakdown.json')
-            save_parameter_breakdown(breakdown, param_file)
-
-        print("="*80)
-        print()
-
-
-def log_correction_model_diagnostics(correction_model, stage_name: str, eval_data=None):
-    """
-    Log correction model diagnostics at the end of each stage.
-    
-    Args:
-        correction_model: The correction model to analyze
-        stage_name: Name of the stage that just completed
-        eval_data: Optional evaluation data for computing log probabilities
-    """
-    print(f"\n🔍 === CORRECTION MODEL DIAGNOSTICS: {stage_name} ===")
-
-    from .models.correction_model import SimpleCorrectionModel, HybridCorrectionModel, FullNeuralCorrectionModel, MuHybridCorrectionModel, GlobalCorrectionModel
-    
-    if isinstance(correction_model, SimpleCorrectionModel):
-        # Get the covariance matrix from Cholesky parameterization
-        covariance_matrix = correction_model.get_covariance_matrix()
-        diagonal_variances = jnp.diag(covariance_matrix)
-        
-        print(f"📊 Diagonal Variances: {diagonal_variances}")
-        print(f"📊 Covariance Matrix Shape: {covariance_matrix.shape}")
-        print(f"📊 Covariance Determinant: {jnp.linalg.det(covariance_matrix):.6f}")
-        print(f"📊 Off-diagonal Elements (max abs): {jnp.max(jnp.abs(covariance_matrix - jnp.diag(diagonal_variances))):.6f}")
-    
-    elif isinstance(correction_model, GlobalCorrectionModel):
-        # GlobalCorrectionModel - no theta dependence
-        covariance_matrix = correction_model.get_covariance_matrix()
-        diagonal_variances = jnp.diag(covariance_matrix)
-        
-        print(f"📊 Global Model:")
-        print(f"📊 Diagonal Variances: {diagonal_variances}")
-        print(f"📊 Covariance Matrix Shape: {covariance_matrix.shape}")
-        print(f"📊 Covariance Determinant: {jnp.linalg.det(covariance_matrix):.6f}")
-        print(f"📊 Off-diagonal Elements (max abs): {jnp.max(jnp.abs(covariance_matrix - jnp.diag(diagonal_variances))):.6f}")
-        print(f"📊 Global Mean Shift: {correction_model.mu_global}")
-    
-    elif isinstance(correction_model, (HybridCorrectionModel, MuHybridCorrectionModel, FullNeuralCorrectionModel)):
-        # For theta-dependent models, use dummy theta = 0
-        # Get the correct theta dimension from the neural network input size
-        if isinstance(correction_model, (HybridCorrectionModel, MuHybridCorrectionModel)):
-            flow_dim = correction_model.local_cholesky_net.layers[0].in_features
-        else:  # FullNeuralCorrectionModel
-            flow_dim = correction_model.cholesky_net.layers[0].in_features
-        dummy_theta = jnp.zeros(flow_dim)
-        covariance_matrix = correction_model.get_covariance_matrix(dummy_theta)
-        diagonal_variances = jnp.diag(covariance_matrix)
-        
-        if isinstance(correction_model, HybridCorrectionModel):
-            model_type = "Hybrid"
-        elif isinstance(correction_model, MuHybridCorrectionModel):
-            model_type = "Mu-Hybrid"
-        else:
-            model_type = "Full Neural"
-        print(f"📊 {model_type} Model (at theta=0):")
-        print(f"📊 Diagonal Variances: {diagonal_variances}")
-        print(f"📊 Covariance Matrix Shape: {covariance_matrix.shape}")
-        print(f"📊 Covariance Determinant: {jnp.linalg.det(covariance_matrix):.6f}")
-        print(f"📊 Off-diagonal Elements (max abs): {jnp.max(jnp.abs(covariance_matrix - jnp.diag(diagonal_variances))):.6f}")
-        
-        # Compute average log probability if evaluation data is provided
-        if eval_data is not None:
-            try:
-                # Use a small sample for efficiency - use all dimensions that model expects
-                x_sim_sample = eval_data[:20]  # First 20 samples, all dimensions
-                x_obs_sample = eval_data[:20]  # Use same for simplicity
-                
-                # Compute log probabilities
-                log_probs = []
-                for i in range(min(20, x_sim_sample.shape[0])):
-                    log_prob = correction_model.log_prob(x_obs_sample[i], x_sim_sample[i])
-                    log_probs.append(log_prob)
-                
-                avg_log_prob = jnp.mean(jnp.array(log_probs))
-                print(f"📊 Average Log Probability (sample): {avg_log_prob:.4f}")
-            except Exception as e:
-                print(f"📊 Could not compute log probabilities: {e}")
-    else:
-        print(f"📊 Correction model type: {type(correction_model)}")
-    
-    print(f"🔍 === END DIAGNOSTICS: {stage_name} ===\n")

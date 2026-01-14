@@ -1,7 +1,4 @@
-"""Training and evaluation for RVNP - Refactored with improved structure.
-In the exp config, are these number of experiments and points per experiment the same as before?
-Is it actually working as intended?
-"""
+"""Training and evaluation for RVNP."""
 
 import jax
 import jax.numpy as jnp
@@ -43,7 +40,9 @@ def load_shared_training_data(config, logger):
 
 def load_inference_data(config, exp_config, logger):
     """
-    Load inference dataset for experiments.
+    Load raw (unbatched) inference dataset for all experiments.
+
+    Returns raw array because normalizing_flow.py does its own batching internally.
 
     Args:
         config: Configuration object
@@ -51,48 +50,48 @@ def load_inference_data(config, exp_config, logger):
         logger: TrainingLogger instance
 
     Returns:
-        Tuple of (full_inference_ds, full_inference_ds_eval)
+        Raw inference array (unbatched)
     """
-    # Store original config values
-    original_num_tests = config.data.num_tests
-    original_inference_simulations = config.data.inference_simulations
-
-    # Temporarily override config to load sufficient data for all experiments
-    config.data.num_tests = exp_config.total_points_needed
-    config.data.inference_simulations = exp_config.total_points_needed
-
     with logger.timer("Loading inference data"):
-        full_inference_ds, full_inference_ds_eval = datasets.get_inference_dataset(config, True)
+        # Load raw data directly using load_custom_dataset (before batching)
+        inference_dataset_name = config.data.inference_dataset
 
-    # Restore original config values
-    config.data.num_tests = original_num_tests
-    config.data.inference_simulations = original_inference_simulations
+        # load_custom_dataset returns (train_ds, eval_ds) split
+        # For inference=True, p=1, so all data goes to eval_ds
+        _, raw_inference_data = datasets.load_custom_dataset(
+            inference_dataset_name,
+            config,
+            num_simulations=exp_config.total_points_needed,
+            load_data=True,
+            return_summary=False,
+            inference=True
+        )
 
     logger.logger.info(
         f"Loaded test observations: {exp_config.total_points_needed} total observations for "
-        f"{exp_config.num_experiments} experiments"
+        f"{exp_config.num_experiments} experiments (raw unbatched array)"
     )
 
-    return full_inference_ds, full_inference_ds_eval
+    return jnp.array(raw_inference_data)
 
 
-def partition_inference_data_for_experiment(full_inference_ds_eval, exp_idx, exp_config):
+def partition_inference_data_for_experiment(raw_inference_data, exp_idx, exp_config):
     """
     Extract the subset of inference data for a specific experiment.
 
     Args:
-        full_inference_ds_eval: Full inference dataset
+        raw_inference_data: Raw (unbatched) inference array
         exp_idx: Experiment index (0-based)
         exp_config: ExperimentConfig instance
 
     Returns:
-        Inference data subset for this experiment
+        Inference data subset for this experiment (raw array slice)
     """
     start_idx = exp_idx * exp_config.points_per_experiment
     end_idx = start_idx + exp_config.points_per_experiment
 
-    # Extract subset
-    inference_data_subset = jnp.array(full_inference_ds_eval)[start_idx:end_idx]
+    # Extract subset - simple array slicing since data is unbatched
+    inference_data_subset = raw_inference_data[start_idx:end_idx]
 
     return inference_data_subset
 
@@ -193,10 +192,8 @@ def train_flow(config):
     # Load shared training data (same across all experiments)
     data_dict = load_shared_training_data(config, logger)
 
-    # Load full inference dataset
-    full_inference_ds, full_inference_ds_eval = load_inference_data(
-        config, exp_config, logger
-    )
+    # Load raw inference data (unbatched)
+    raw_inference_data = load_inference_data(config, exp_config, logger)
 
     # Run experiments
     logger.logger.info("")
@@ -211,9 +208,9 @@ def train_flow(config):
         # Create experiment-specific random key
         experiment_rng = jax.random.fold_in(rng, exp_idx)
 
-        # Partition inference data for this experiment
+        # Partition inference data for this experiment (slice raw array)
         inference_data_eval = partition_inference_data_for_experiment(
-            full_inference_ds_eval, exp_idx, exp_config
+            raw_inference_data, exp_idx, exp_config
         )
 
         # Run single experiment

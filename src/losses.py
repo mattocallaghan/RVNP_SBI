@@ -24,6 +24,161 @@ from jax import custom_vjp
 from typing import Tuple, Any
 
 
+class MaximumLikelihoodLoss:
+    """Loss for fitting a flow with maximum likelihood (negative log likelihood).
+
+    This loss can be used to learn either conditional or unconditional distributions.
+    """
+    
+    def __init__(self, min_loss_bound: float = None):
+        """
+        Args:
+            min_loss_bound: Optional lower bound for the loss to prevent collapse.
+                           If provided, loss will be clipped to this minimum value.
+        """
+        self.min_loss_bound = min_loss_bound
+
+    @eqx.filter_jit
+    def __call__(
+        self,
+        params: AbstractDistribution,
+        static: AbstractDistribution,
+        x: Array,
+        condition: Array | None = None,
+        key: PRNGKeyArray | None = None,
+    ) -> Float[Array, ""]:
+        """Compute the loss. Key is ignored (for consistency of API)."""
+        dist = paramax.unwrap(eqx.combine(params, static))
+        loss = -jax.vmap(dist.log_prob)(x, condition).mean()
+        
+        # Apply hard clipping if minimum bound specified
+        if self.min_loss_bound is not None:
+            loss = jnp.maximum(loss, self.min_loss_bound)
+            
+        return loss
+
+
+
+class ShannonLossEmbedding(eqx.Module):
+    """
+    InfoMax / Jensen-Shannon embedding loss + geometry regularizers that
+    encourage parameter-sensitive, well-conditioned latent directions.
+    
+    Optionally includes decoder reconstruction terms for both synthetic and real data.
+
+    Inputs expected:
+      - x: synthetic batch (B, ...)
+      - x_real: real batch (B_real, ...)
+      - condition: theta batch (B, p) aligned with x rows
+      - key: PRNGKey
+    """
+
+    # hyperparameters (tune these)
+    lambda_geom: float = 1.0       # weight for geometry log-det loss (encourage sensitivity)
+    lambda_scale: float = 1.0      # weight for trace/scale penalty (prevent blow-up)
+    lambda_covdiag: float = 0.1    # weight for diagonal covariance (encourage use of dims)
+    lambda_reconstruction: float = 0.0  # weight for decoder reconstruction loss
+    use_decoder: bool = False      # enable/disable decoder reconstruction term
+    ridge: float = 1e-3            # ridge for theta pseudo-inverse
+    eps: float = 1e-6              # numerical stabilizer for slogdet
+    target_trace: float = None     # if None, use batch trace baseline (set if you want fixed scale)
+    num_shuffles: int = 30         # number of permutations for marginal term (as before)
+
+    # note: params/static are not stored here; they are passed into __call__
+    def __call__(self, params, static, x, x_real, condition, key):
+        # Unpack modules (same as your code)
+        params_embedding, params_discriminator, params_decoder = params
+        static_embedding, static_discriminator, static_decoder = static
+        embedding = eqx.combine(params_embedding, static_embedding)
+        discriminator = eqx.combine(params_discriminator, static_discriminator)
+        decoder = eqx.combine(params_decoder, static_decoder)
+
+        batch_size = x.shape[0]
+
+        # -------------------------
+        # Compute embeddings z and z_real
+        # -------------------------
+        key, subkey = split(key)
+        keys = jax.random.split(subkey, batch_size)
+        p_embedding = lambda x_i, k: embedding(x_i, key=k, inference=True)
+        # note: your original code vmap'd with shape x[:, jnp.newaxis, :] — preserve that if needed
+        z = vmap(p_embedding)(x[:, jnp.newaxis, :], keys)        # (B, z_dim)
+        key, subkey = split(key)
+        real_keys = jax.random.split(subkey, x_real.shape[0])
+        z_real = vmap(p_embedding)(x_real[:, jnp.newaxis, :], real_keys)  # (B_real, z_dim)
+
+        # -------------------------
+        # Decoder reconstruction loss (optional)
+        # -------------------------
+        reconstruction_loss = 0.0
+        if self.use_decoder and self.lambda_reconstruction > 0.0:
+            # Reconstruct synthetic data from embeddings
+            key, subkey = split(key)
+            keys_recon = jax.random.split(subkey, batch_size)
+            p_decoder = lambda z_i, k: decoder(z_i, key=k, inference=True)
+            x_reconstructed = vmap(p_decoder)(z, keys_recon)  # (B, x_dim)
+            
+            # Reconstruct real data from embeddings
+            key, subkey = split(key)
+            real_keys_recon = jax.random.split(subkey, x_real.shape[0])
+            #x_real_reconstructed = vmap(p_decoder)(z_real, real_keys_recon)  # (B_real, x_dim)
+            
+            # Compute MSE reconstruction losses
+            # Remove the channel dimension for comparison if it exists
+            x_flat = x.reshape(x.shape[0], -1)  # Flatten to (B, x_dim)
+            #x_real_flat = x_real.reshape(x_real.shape[0], -1)  # Flatten to (B_real, x_dim)
+            x_reconstructed_flat = x_reconstructed.reshape(x_reconstructed.shape[0], -1)
+            #x_real_reconstructed_flat = x_real_reconstructed.reshape(x_real_reconstructed.shape[0], -1)
+            
+            reconstruction_loss_synthetic = jnp.mean((x_flat - x_reconstructed_flat)**2)
+            #reconstruction_loss_real = jnp.mean((x_real_flat - x_real_reconstructed_flat)**2)
+            reconstruction_loss = self.lambda_reconstruction * (reconstruction_loss_synthetic )
+
+        # -------------------------
+        # Shannon / InfoMax 
+        # -------------------------
+        # Joint logits
+        key, subkey = split(key)
+        keys = jax.random.split(subkey, batch_size)
+        logits_joint = jax.vmap(discriminator)(z, condition, key=keys)  # (B,)
+
+        # Marginal terms via shuffles
+        key, subkey = split(key)
+        perm_keys = jax.random.split(subkey, self.num_shuffles)
+
+        def marginal_term_fn(perm_key):
+            perm_key, key_inner = split(perm_key)
+            perm = jax.random.permutation(perm_key, condition.shape[0])
+            condition_shuffled = condition[perm]
+            keys_inner = jax.random.split(key_inner, batch_size)
+            logits_marginal = jax.vmap(discriminator)(z, condition_shuffled, key=keys_inner)
+            return -jax.nn.softplus(logits_marginal).mean()
+
+        marginal_terms = vmap(marginal_term_fn)(perm_keys)
+        marginal_term_avg = jnp.mean(marginal_terms)
+        joint_term = -jax.nn.softplus(-logits_joint).mean()
+        mi_lower_bound = joint_term + marginal_term_avg
+        shannon_loss = -mi_lower_bound  # minimize negative lower bound
+
+
+
+        # -------------------------
+        # Total loss combine
+        # -------------------------
+        total_loss = shannon_loss + reconstruction_loss #+ geometry_loss + scale_loss + covdiag_loss + reconstruction_loss
+
+        # Return losses (helpful to debug)
+        metrics = {
+            "total_loss": total_loss,
+            "shannon_loss": shannon_loss,
+            "reconstruction_loss": reconstruction_loss,
+        }
+
+        return total_loss#, metrics
+
+
+
+
 # ============================================================================
 # DReG (Doubly Reparameterized Gradient) Helper Functions
 # ============================================================================
@@ -45,48 +200,6 @@ def _compute_normalized_weights(log_weights: Array) -> Array:
     log_weights_normalized = log_weights - logsumexp(log_weights, axis=-1, keepdims=True)
     return jnp.exp(log_weights_normalized)
 
-
-def _recompute_log_posterior_with_stop_grad(
-    flow: AbstractDistribution,
-    thetas: Array,
-    x_obs: Array
-) -> Array:
-    """Recompute log q_φ(θ|x_obs) with stop_gradient on flow parameters.
-
-    This is the KEY to DReG variance reduction: we recompute the posterior
-    log probability with stopped gradients on the flow parameters. This allows
-    the importance weights to be treated as constants during backpropagation,
-    enabling the reparameterization trick to work effectively.
-
-    Args:
-        flow: Posterior flow q_φ(θ|x_obs)
-        thetas: Sampled theta values, shape (n_obs, K, theta_dim)
-        x_obs: Observed data, shape (n_obs, obs_dim)
-
-    Returns:
-        Log probabilities with stopped gradients, shape (n_obs, K)
-    """
-    # Partition flow into parameters and static structure
-    params_flow, static_flow = eqx.partition(
-        flow,
-        eqx.is_inexact_array,
-        is_leaf=lambda leaf: isinstance(leaf, paramax.NonTrainable),
-    )
-
-    # Stop gradients on parameters (like PyTorch's .detach())
-    params_flow_stopped = stop_gradient(params_flow)
-
-    # Reconstruct flow with stopped parameters
-    flow_stopped = paramax.unwrap(eqx.combine(params_flow_stopped, static_flow))
-
-    # Compute log prob with stopped flow
-    def log_prob_single_obs(thetas_k, x_obs_single):
-        """Compute log prob for all K thetas given single observation."""
-        return vmap(lambda theta: flow_stopped.log_prob(theta, condition=x_obs_single))(thetas_k)
-
-    # Vectorize over observations
-    log_probs_stopped = vmap(log_prob_single_obs)(thetas, x_obs)
-    return log_probs_stopped  # (n_obs, K)
 
 
 def _iwae_elbo_computation(
@@ -269,329 +382,6 @@ def _iwae_with_dreg(
     return -dreg_loss  # Negative because we're minimizing loss
 
 
-# Note: Old _iwae_with_dreg_fwd and _iwae_with_dreg_bwd functions removed
-# New implementation uses direct JAX autodiff with stop_gradient trick
-
-def _old_iwae_with_dreg_fwd_REMOVED(
-    params_flow, static_flow,
-    params_correction, static_correction,
-    simulator_flow, prior_log,
-    x_obs_real, key,
-    simulator_samples_per_theta, n_sim_samples_per_theta,
-) -> Tuple[Float[Array, ""], Tuple]:
-    """Forward pass: Compute standard IWAE and save residuals for backward.
-
-    Returns:
-        loss: IWAE loss (scalar)
-        residuals: Tuple of values needed for backward pass
-    """
-    # Reconstruct models from params and static
-    flow = paramax.unwrap(eqx.combine(params_flow, static_flow))
-    correction_model = paramax.unwrap(eqx.combine(params_correction, static_correction))
-
-    n_obs = x_obs_real.shape[0]
-    K = simulator_samples_per_theta
-    N = n_sim_samples_per_theta
-
-    # 1. Sample theta ~ q_φ(θ|x_obs)
-    key_theta, key = jax.random.split(key)
-    keys_theta = jax.random.split(key_theta, n_obs)
-
-    def sample_thetas(x_single, k):
-        return flow.sample_and_log_prob(k, (K,), condition=x_single)
-
-    thetas_sampled, log_p_posterior = vmap(sample_thetas)(x_obs_real, keys_theta)
-
-    # 2. Compute prior log prob
-    prior_logp = vmap(vmap(prior_log))(thetas_sampled)
-
-    # 3. Generate simulator keys
-    key_sim, key = jax.random.split(key)
-    keys_sim = jax.random.split(key_sim, n_obs * K).reshape(n_obs, K)
-
-    # 4. Compute ELBO using helper function
-    elbos = _iwae_elbo_computation(
-        correction_model, simulator_flow, x_obs_real,
-        thetas_sampled, keys_sim, N
-    )
-
-    # 5. Compute IWAE loss
-    # IWAE = logsumexp(ELBO - log q) + log p - log K
-    # Note: Prior is OUTSIDE logsumexp for numerical stability
-    log_weights = elbos - log_p_posterior
-    iwae_per_obs = logsumexp(log_weights, axis=-1) + jnp.mean(prior_logp, axis=-1) - jnp.log(K)
-    iwae_loss = -jnp.mean(iwae_per_obs)
-
-    # 6. Save residuals for backward pass
-    residuals = (
-        params_flow, static_flow,
-        params_correction, static_correction,
-        simulator_flow, prior_log,
-        x_obs_real, thetas_sampled, keys_sim,
-        elbos, log_p_posterior, prior_logp,
-        jnp.array(K, dtype=jnp.int32),
-        jnp.array(N, dtype=jnp.int32),
-    )
-
-    return iwae_loss, residuals
-
-
-def _iwae_with_dreg_bwd(residuals: Tuple, g_loss: Float[Array, ""]) -> Tuple:
-    """Backward pass: Apply DReG importance weighting to gradients.
-
-    This is where the magic happens: we recompute importance weights with
-    stop_gradient on flow parameters, then use those weights to scale the
-    gradients. This reduces gradient variance compared to standard IWAE.
-
-    Args:
-        residuals: Saved values from forward pass
-        g_loss: Incoming gradient from downstream (usually 1.0)
-
-    Returns:
-        Gradients for all input arguments (matching forward signature)
-    """
-    # Unpack residuals
-    (params_flow, static_flow, params_correction, static_correction,
-     simulator_flow, prior_log, x_obs_real, thetas_sampled, keys_sim,
-     elbos, log_p_posterior, prior_logp, K, N) = residuals
-
-    # Reconstruct models
-    flow = paramax.unwrap(eqx.combine(params_flow, static_flow))
-    correction_model = paramax.unwrap(eqx.combine(params_correction, static_correction))
-
-    # KEY STEP 1: Recompute log q(θ|x) with STOP_GRADIENT on flow params
-    log_p_posterior_stopped = _recompute_log_posterior_with_stop_grad(
-        flow, thetas_sampled, x_obs_real
-    )
-
-    # KEY STEP 2: Compute normalized importance weights (these are CONSTANTS in backward)
-    log_weights_stopped = elbos - log_p_posterior_stopped
-    grad_weights = _compute_normalized_weights(log_weights_stopped)  # (n_obs, K)
-
-    # DReG uses SQUARED normalized weights (key difference from STL!)
-    grad_weights_squared = grad_weights ** 2  # (n_obs, K)
-
-    # KEY STEP 3a: Define model objective (correction model uses standard IWAE)
-    def model_objective(pc):
-        """Model objective: standard IWAE weighting for correction model."""
-        corr_temp = paramax.unwrap(eqx.combine(pc, static_correction))
-
-        # Recompute ELBO with current correction model params
-        elbos_recomp = _iwae_elbo_computation(
-            corr_temp, simulator_flow, x_obs_real,
-            thetas_sampled, keys_sim, int(N)
-        )
-
-        # Standard IWAE weighting (single weights, not squared)
-        weighted_terms = grad_weights * elbos_recomp
-        weighted_sum = jnp.sum(weighted_terms, axis=-1)
-
-        # Negative because we minimize negative ELBO
-        loss = -jnp.mean(weighted_sum)
-        return loss
-
-    # KEY STEP 3b: Define inference objective (flow uses DReG with squared weights)
-    def inference_objective(pf):
-        """Inference objective: DReG with SQUARED weights for flow."""
-        flow_temp = paramax.unwrap(eqx.combine(pf, static_flow))
-        corr_temp = paramax.unwrap(eqx.combine(params_correction, static_correction))
-
-        # Recompute ELBO with current params
-        elbos_recomp = _iwae_elbo_computation(
-            corr_temp, simulator_flow, x_obs_real,
-            thetas_sampled, keys_sim, int(N)
-        )
-
-        # Recompute log q(θ|x) with current flow params
-        def log_prob_batch(thetas_k, x_single):
-            return vmap(lambda t: flow_temp.log_prob(t, condition=x_single))(thetas_k)
-
-        log_q_recomp = vmap(log_prob_batch)(thetas_sampled, x_obs_real)
-
-        # DReG: Use SQUARED normalized weights (this is the key!)
-        stopped_log_weights = elbos_recomp - log_q_recomp
-        weighted_terms = grad_weights_squared * stopped_log_weights
-        weighted_sum = jnp.sum(weighted_terms, axis=-1)  # Sum over K
-
-        # Add prior term with standard weighting
-        prior_recomp = vmap(vmap(prior_log))(thetas_sampled)
-        prior_mean = jnp.mean(prior_recomp, axis=-1)
-
-        # Negative because we want to minimize negative IWAE
-        loss = -jnp.mean(weighted_sum + prior_mean)
-        return loss
-
-    # KEY STEP 4: Compute gradients separately for model and inference network
-    grad_correction = jax.grad(model_objective)(params_correction)
-    grad_flow = jax.grad(inference_objective)(params_flow)
-
-    # Scale by incoming gradient
-    grad_flow = jax.tree_map(lambda g: g * g_loss, grad_flow)
-    grad_correction = jax.tree_map(lambda g: g * g_loss, grad_correction)
-
-    # Return gradients (order must match forward inputs)
-    # None for non-differentiable inputs
-    return (
-        grad_flow, None,  # params_flow, static_flow
-        grad_correction, None,  # params_correction, static_correction
-        None, None,  # simulator_flow, prior_log
-        None, None,  # x_obs_real, key
-        None, None,  # K, N (hyperparameters)
-    )
-
-
-class MaximumLikelihoodLoss:
-    """Loss for fitting a flow with maximum likelihood (negative log likelihood).
-
-    This loss can be used to learn either conditional or unconditional distributions.
-    """
-    
-    def __init__(self, min_loss_bound: float = None):
-        """
-        Args:
-            min_loss_bound: Optional lower bound for the loss to prevent collapse.
-                           If provided, loss will be clipped to this minimum value.
-        """
-        self.min_loss_bound = min_loss_bound
-
-    @eqx.filter_jit
-    def __call__(
-        self,
-        params: AbstractDistribution,
-        static: AbstractDistribution,
-        x: Array,
-        condition: Array | None = None,
-        key: PRNGKeyArray | None = None,
-    ) -> Float[Array, ""]:
-        """Compute the loss. Key is ignored (for consistency of API)."""
-        dist = paramax.unwrap(eqx.combine(params, static))
-        loss = -jax.vmap(dist.log_prob)(x, condition).mean()
-        
-        # Apply hard clipping if minimum bound specified
-        if self.min_loss_bound is not None:
-            loss = jnp.maximum(loss, self.min_loss_bound)
-            
-        return loss
-
-
-
-class ShannonLossEmbedding(eqx.Module):
-    """
-    InfoMax / Jensen-Shannon embedding loss + geometry regularizers that
-    encourage parameter-sensitive, well-conditioned latent directions.
-    
-    Optionally includes decoder reconstruction terms for both synthetic and real data.
-
-    Inputs expected:
-      - x: synthetic batch (B, ...)
-      - x_real: real batch (B_real, ...)
-      - condition: theta batch (B, p) aligned with x rows
-      - key: PRNGKey
-    """
-
-    # hyperparameters (tune these)
-    lambda_geom: float = 1.0       # weight for geometry log-det loss (encourage sensitivity)
-    lambda_scale: float = 1.0      # weight for trace/scale penalty (prevent blow-up)
-    lambda_covdiag: float = 0.1    # weight for diagonal covariance (encourage use of dims)
-    lambda_reconstruction: float = 0.0  # weight for decoder reconstruction loss
-    use_decoder: bool = False      # enable/disable decoder reconstruction term
-    ridge: float = 1e-3            # ridge for theta pseudo-inverse
-    eps: float = 1e-6              # numerical stabilizer for slogdet
-    target_trace: float = None     # if None, use batch trace baseline (set if you want fixed scale)
-    num_shuffles: int = 30         # number of permutations for marginal term (as before)
-
-    # note: params/static are not stored here; they are passed into __call__
-    def __call__(self, params, static, x, x_real, condition, key):
-        # Unpack modules (same as your code)
-        params_embedding, params_discriminator, params_decoder = params
-        static_embedding, static_discriminator, static_decoder = static
-        embedding = eqx.combine(params_embedding, static_embedding)
-        discriminator = eqx.combine(params_discriminator, static_discriminator)
-        decoder = eqx.combine(params_decoder, static_decoder)
-
-        batch_size = x.shape[0]
-
-        # -------------------------
-        # Compute embeddings z and z_real
-        # -------------------------
-        key, subkey = split(key)
-        keys = jax.random.split(subkey, batch_size)
-        p_embedding = lambda x_i, k: embedding(x_i, key=k, inference=True)
-        # note: your original code vmap'd with shape x[:, jnp.newaxis, :] — preserve that if needed
-        z = vmap(p_embedding)(x[:, jnp.newaxis, :], keys)        # (B, z_dim)
-        key, subkey = split(key)
-        real_keys = jax.random.split(subkey, x_real.shape[0])
-        z_real = vmap(p_embedding)(x_real[:, jnp.newaxis, :], real_keys)  # (B_real, z_dim)
-
-        # -------------------------
-        # Decoder reconstruction loss (optional)
-        # -------------------------
-        reconstruction_loss = 0.0
-        if self.use_decoder and self.lambda_reconstruction > 0.0:
-            # Reconstruct synthetic data from embeddings
-            key, subkey = split(key)
-            keys_recon = jax.random.split(subkey, batch_size)
-            p_decoder = lambda z_i, k: decoder(z_i, key=k, inference=True)
-            x_reconstructed = vmap(p_decoder)(z, keys_recon)  # (B, x_dim)
-            
-            # Reconstruct real data from embeddings
-            key, subkey = split(key)
-            real_keys_recon = jax.random.split(subkey, x_real.shape[0])
-            #x_real_reconstructed = vmap(p_decoder)(z_real, real_keys_recon)  # (B_real, x_dim)
-            
-            # Compute MSE reconstruction losses
-            # Remove the channel dimension for comparison if it exists
-            x_flat = x.reshape(x.shape[0], -1)  # Flatten to (B, x_dim)
-            #x_real_flat = x_real.reshape(x_real.shape[0], -1)  # Flatten to (B_real, x_dim)
-            x_reconstructed_flat = x_reconstructed.reshape(x_reconstructed.shape[0], -1)
-            #x_real_reconstructed_flat = x_real_reconstructed.reshape(x_real_reconstructed.shape[0], -1)
-            
-            reconstruction_loss_synthetic = jnp.mean((x_flat - x_reconstructed_flat)**2)
-            #reconstruction_loss_real = jnp.mean((x_real_flat - x_real_reconstructed_flat)**2)
-            reconstruction_loss = self.lambda_reconstruction * (reconstruction_loss_synthetic )
-
-        # -------------------------
-        # Shannon / InfoMax 
-        # -------------------------
-        # Joint logits
-        key, subkey = split(key)
-        keys = jax.random.split(subkey, batch_size)
-        logits_joint = jax.vmap(discriminator)(z, condition, key=keys)  # (B,)
-
-        # Marginal terms via shuffles
-        key, subkey = split(key)
-        perm_keys = jax.random.split(subkey, self.num_shuffles)
-
-        def marginal_term_fn(perm_key):
-            perm_key, key_inner = split(perm_key)
-            perm = jax.random.permutation(perm_key, condition.shape[0])
-            condition_shuffled = condition[perm]
-            keys_inner = jax.random.split(key_inner, batch_size)
-            logits_marginal = jax.vmap(discriminator)(z, condition_shuffled, key=keys_inner)
-            return -jax.nn.softplus(logits_marginal).mean()
-
-        marginal_terms = vmap(marginal_term_fn)(perm_keys)
-        marginal_term_avg = jnp.mean(marginal_terms)
-        joint_term = -jax.nn.softplus(-logits_joint).mean()
-        mi_lower_bound = joint_term + marginal_term_avg
-        shannon_loss = -mi_lower_bound  # minimize negative lower bound
-
-
-
-        # -------------------------
-        # Total loss combine
-        # -------------------------
-        total_loss = shannon_loss + reconstruction_loss #+ geometry_loss + scale_loss + covdiag_loss + reconstruction_loss
-
-        # Return losses (helpful to debug)
-        metrics = {
-            "total_loss": total_loss,
-            "shannon_loss": shannon_loss,
-            "reconstruction_loss": reconstruction_loss,
-        }
-
-        return total_loss#, metrics
-
 
 
 
@@ -605,7 +395,7 @@ class RVNPLoss:
 
     L(φ,ψ) = IW-ELBO + λ_shrinkage * ||μ_θ(θ)||² + λ_entropy * H(r_ψ)
 
-    where IW-ELBO is the importance-weighted evidence lower bound computed via _kl_divergence.
+    where IW-ELBO is the importance-weighted evidence lower bound computed via importance_weighted_ae_loss.
     """
     
     def __init__(
@@ -618,7 +408,7 @@ class RVNPLoss:
         n_sim_samples_per_theta: int = 32,  # Number of x_sim samples per theta in KL divergence
         prior: AbstractDistribution = None,  # Prior distribution
         empirical_bias: Array = None,  # Empirical bias for shrinkage prior (optional)
-        use_dreg: bool = False,  # Use DReG gradient estimator for variance reduction
+        use_dreg: bool = True,  # Use DReG gradient estimator for variance reduction
     ):
         self.lambda_variational = lambda_variational
         self.lambda_kl = lambda_kl
@@ -654,7 +444,7 @@ class RVNPLoss:
 
         where:
 
-        - :math:`\mathcal{L}_{\text{IWAE}}`: Importance-weighted autoencoder loss (computed in _kl_divergence)
+        - :math:`\mathcal{L}_{\text{IWAE}}`: Importance-weighted autoencoder loss (computed in importance_weighted_ae_loss)
         - :math:`\mathcal{R}_{\text{shrink}}(\psi) = \frac{1}{K}\sum_{k=1}^K \|\mu_\theta(\theta_k)\|^2`: Shrinkage regularization
         - :math:`q_\phi(\theta|\hat{x})`: Posterior flow (amortized inference)
         - :math:`r_\psi(\hat{x}|x,\theta)`: Correction model
@@ -669,7 +459,7 @@ class RVNPLoss:
             static_correction: Static parameters of correction model
             simulator_flow: Pre-trained simulator flow (complete model)
             x_obs: Observed data, shape (n_obs, obs_dim).
-                   **ONLY data input** - all sampling happens inside _kl_divergence
+                   **ONLY data input** - all sampling happens inside importance_weighted_ae_loss
             key: JAX random key for stochastic sampling
             embedding_stats: Optional dict with 'mean' and 'std' for embedding normalization
 
@@ -677,7 +467,7 @@ class RVNPLoss:
             Scalar loss = :math:`-\mathcal{L}_{\text{IWAE}} + \lambda_{\text{shrinkage}} \cdot \mathcal{R}_{\text{shrink}}`
 
         Notes:
-            All sampling occurs inside _kl_divergence:
+            All sampling occurs inside importance_weighted_ae_loss:
 
             1. Sample :math:`\theta_1, \ldots, \theta_K \sim q_\phi(\theta|x_{\text{obs}})`
             2. For each :math:`\theta_k`, sample :math:`x_{\text{sim}}^{(n)} \sim p_{\text{sim}}(x|\theta_k)`
@@ -692,7 +482,6 @@ class RVNPLoss:
         flow = paramax.unwrap(eqx.combine(params_flow, static_flow))
         correction_model = paramax.unwrap(eqx.combine(params_correction, static_correction))
         n_obs = x_obs.shape[0]
-        
         # ======== ======== ======== ======== ======== ======== ========
         # ========              EMBEDDING SECTION               ========
         # ======== ======== ======== ======== ======== ======== ========
@@ -710,18 +499,17 @@ class RVNPLoss:
         # ========              RVNP LOSS                       ========
         # ======== ======== ======== ======== ======== ======== ========
         # L_IWAE (Importance-Weighted Autoencoder loss) with shrinkage regularization
-        # All sampling (θ_k ~ q_φ(θ|x_obs) and x_sim ~ p(x|θ)) happens inside _kl_divergence
+        # All sampling (θ_k ~ q_φ(θ|x_obs) and x_sim ~ p(x|θ)) happens inside importance_weighted_ae_loss
         # Returns: -L_IWAE + λ_shrinkage * R_shrink
         key_variational, key = jax.random.split(key)
-        reverse = False  # Use forward KL divergence
-        loss = self.lambda_variational * self._kl_divergence(
+        reverse = False  # Use forward KL divergence, legacy code
+        loss = self.lambda_variational * self.importance_weighted_ae_loss(
             correction_model, simulator_flow, flow, reverse, x_obs_processed, key_variational,
             n_samples=self.simulator_samples_per_theta, kl_weight=self.lambda_kl,
             prior_log=self.prior.log_prob, lambda_shrinkage=self.lambda_shrinkage
         )
 
         return loss
-
 
 
     @eqx.filter_jit
@@ -836,7 +624,7 @@ class RVNPLoss:
 
 
     @eqx.filter_jit
-    def _kl_divergence(
+    def importance_weighted_ae_loss(
         self,
         correction_model,
         simulator_flow,
@@ -926,41 +714,18 @@ class RVNPLoss:
         # ========================================================================
         n_obs = x_obs_real.shape[0]
 
-        # 1. Get theta values (either from training data or sample from posterior)
         # Sample theta from posterior for each observation
         key_theta_sample, key = jax.random.split(key)
         keys_theta = jax.random.split(key_theta_sample, n_obs)
-
-
-
-
-
-
-        stick_the_landing = False
-        if(stick_the_landing==True):
-            def sample_thetas_for_single_obs(x_obs_single, key_single):
-                samples=flow.sample(key_single, (self.simulator_samples_per_theta,), condition=x_obs_single)
-                params_flow, static_flow = eqx.partition(
-                flow,
-                eqx.is_inexact_array,
-                is_leaf=lambda leaf: isinstance(leaf, paramax.NonTrainable),
-                )
-                flow_temp = paramax.unwrap(eqx.combine(stop_gradient(params_flow), static_flow))
-                log_p = flow_temp.log_prob(samples, condition=x_obs_single)
-                return samples, log_p
-        else:
-            def sample_thetas_for_single_obs(x_obs_single, key_single):
-                return flow.sample_and_log_prob(key_single, (self.simulator_samples_per_theta,), condition=x_obs_single)
-
+        def sample_thetas_for_single_obs(x_obs_single, key_single):
+            return flow.sample_and_log_prob(key_single, (self.simulator_samples_per_theta,), condition=x_obs_single)
 
         # Shape: (n_obs, samples_per_theta, theta_dim)
         thetas_sampled,log_p_posterior = jax.vmap(sample_thetas_for_single_obs)(x_obs_real, keys_theta)
         theta_for_sampling = thetas_sampled[:,:,:]
 
-        # Clip theta values to training bounds if enabled
-        #theta_for_sampling = self._clip_theta(theta_for_sampling)
-
-        prior_logp=jax.vmap(jax.vmap(prior_log))(theta_for_sampling)
+        prior_logp=jax.vmap(jax.vmap(prior_log))(theta_for_sampling) # evaluate log prior
+        
         # Generate keys for simulator sampling: (n_obs, samples_per_theta)
         n_obs_total, samples_per_theta = theta_for_sampling.shape[0], theta_for_sampling.shape[1]
         
@@ -968,13 +733,14 @@ class RVNPLoss:
         keys_sim_flat = jax.random.split(key_sample, n_obs_total * samples_per_theta)
         keys_sim = keys_sim_flat.reshape(n_obs_total, samples_per_theta)
 
-        # Use configurable n_sim_samples_per_theta instead of hardcoded value
-        n_samples = self.n_sim_samples_per_theta
+        # ########### ELBO Computation ###########
+        # Sample x_sim from simulator for each theta
+        n_samples = self.n_sim_samples_per_theta # Number of simulator samples per theta
         def sample_from_simulator_single(theta_single, key_single):
             # Sample like theta sampling: key, shape, condition
             return simulator_flow.sample(key_single, (n_samples,), condition=theta_single)
         
-        # Sample for all theta using nested vmap: (n_obs, samples_per_theta, n_samples, x_dim)
+        # Sample x_sim from simulator: (n_obs, samples_per_theta, n_samples, x_dim)
         x_sim_samples = vmap(vmap(sample_from_simulator_single))(theta_for_sampling, keys_sim)
         n_obs, K_samples = thetas_sampled.shape[0], thetas_sampled.shape[1]
     
@@ -985,7 +751,7 @@ class RVNPLoss:
             # x_sim_samples_single: (n_theta, n_samples, x_dim)
             # log_q_phi_single: (n_theta,)
             # log_prior_single: (n_theta,)
-            def compute_terms_single_theta(x_sim_theta_k, log_q_phi_k, log_prior_single_k, theta_single_k):
+            def compute_terms_single_theta(x_sim_theta_k, theta_single_k):
                 # x_sim_theta_k: (n_sim_samples, x_dim)
                 # log_q_phi_k: (1)
                 # log_prior_single_k: (1)
@@ -997,28 +763,14 @@ class RVNPLoss:
                 theta_1d = jnp.atleast_1d(theta_single_k)
                 theta_batch = jnp.broadcast_to(theta_1d[None, :], (n_sim_samples, theta_1d.shape[-1]))
                 log_p_obs_given_sim = vmap(lambda x_sim, theta: correction_model.log_prob(x_obs_single, x_sim, theta))(x_sim_theta_k, theta_batch)
-                if(reverse==True):
-                    elbo_single_obs_single_theta = jnp.mean(log_p_obs_given_sim) - log_q_phi_k+log_prior_single_k
-                    return jnp.mean(elbo_single_obs_single_theta)
-                else:
-                    elbo_single_obs_single_theta=logsumexp(log_p_obs_given_sim)- jnp.log(x_sim_theta_k.shape[0])
-                    return elbo_single_obs_single_theta
 
-
-
-                
-            
+                elbo_single_obs_single_theta=logsumexp(log_p_obs_given_sim)- jnp.log(x_sim_theta_k.shape[0])
+                return elbo_single_obs_single_theta
+  
             # Compute for all K theta samples, single here refers to single theta sample
-            elbo_single_obs= vmap(compute_terms_single_theta)(x_sim_samples_single, log_q_phi_single, log_prior_single, theta_samples_single)
-            # needs to be averaged over the theta dimension
-            if reverse==True:
-                return jnp.mean(elbo_single_obs)
-            else:
-                #this was changed!
-                #return logsumexp(elbo_single_obs-log_q_phi_single+log_prior_single)- jnp.log(theta_samples_single.shape[0])
-                return logsumexp(elbo_single_obs-log_q_phi_single)+log_prior_single.mean()- jnp.log(theta_samples_single.shape[0])
+            elbo_single_obs= vmap(compute_terms_single_theta)(x_sim_samples_single, theta_samples_single)
+            return logsumexp(elbo_single_obs-log_q_phi_single)+log_prior_single.mean()- jnp.log(theta_samples_single.shape[0])
         
-
         # Compute L_IWAE for all observations
         iwae_per_obs = vmap(compute_elbo_single_obs)(
             x_obs_real, thetas_sampled, x_sim_samples, log_p_posterior,prior_logp
@@ -1042,82 +794,4 @@ class RVNPLoss:
 
         # Total loss: -L_IWAE + λ_shrinkage * R_shrink
         return iwae_loss + shrinkage_loss
-
-
-    @eqx.filter_jit
-    def _compute_entropy_regularization(self, correction_model, x_sim: Array) -> Float[Array, ""]:
-        """
-        Compute entropy regularization term for the correction model.
-        
-        For SimpleCorrectionModel with diagonal covariance Σ:
-        H(p(x_obs|x)) = 0.5 * Σ_i log(2πe * σ_i^2)
-        
-        For diagonal covariance models:
-        H(p(x_obs|x)) = 0.5 * Σ_i log(2πe * σ_i^2)
-        
-        Args:
-            correction_model: The correction model
-            x_sim: Simulator samples to evaluate entropy at
-            
-        Returns:
-            Negative entropy (regularization loss)
-        """
-        if isinstance(correction_model, SimpleCorrectionModel):
-            # Full covariance case with Cholesky parameterization
-            try:
-                # Get the Cholesky factor (same for all inputs in SimpleCorrectionModel)
-                # Use dummy theta for SimpleCorrectionModel (ignored internally)
-                dummy_theta = jnp.zeros((1, 1))  # Dummy theta, will be ignored
-                _, L = correction_model(x_sim[:1], dummy_theta)  # Just need one sample to get L
-                
-                # Entropy for multivariate Gaussian: H = 0.5 * (dim * log(2πe) + 2*log_det(L))
-                dim = L.shape[0]
-                log_det_L = jnp.sum(jnp.log(jnp.diag(L)))  # log|Σ| = 2*log|L|
-                entropy_per_sample = 0.5 * (dim * jnp.log(2 * jnp.pi * jnp.e) + 2 * log_det_L)
-                
-                # Return negative entropy for regularization (we want to maximize entropy)
-                return -entropy_per_sample
-                
-            except (jax.errors.LinAlgError, AttributeError):
-                # Fallback if there are numerical issues
-                return 0.0
-                
-        elif isinstance(correction_model, GlobalCorrectionModel):
-            # GlobalCorrectionModel - similar to SimpleCorrectionModel but no theta dependence
-            try:
-                # Get covariance matrix directly (no theta needed)
-                Sigma = correction_model.get_covariance_matrix()
-                
-                # Entropy for multivariate Gaussian: H = 0.5 * (dim * log(2πe) + log_det(Σ))
-                dim = Sigma.shape[0]
-                log_det_Sigma = jnp.log(jnp.linalg.det(Sigma + 1e-6 * jnp.eye(dim)))
-                entropy_per_sample = 0.5 * (dim * jnp.log(2 * jnp.pi * jnp.e) + log_det_Sigma)
-                
-                # Return negative entropy for regularization (we want to maximize entropy)
-                return -entropy_per_sample
-                
-            except (jax.errors.LinAlgError, AttributeError):
-                # Fallback if there are numerical issues
-                return 0.0
-        else:
-            # Diagonal covariance case - needs theta for neural correction models
-            try:
-                # For neural correction models, we need theta. Create dummy theta for entropy computation
-                if isinstance(correction_model, (DiagonalNeuralCorrectionModel, HybridCorrectionModel, MuHybridCorrectionModel)):
-                    # Use zero theta as placeholder for entropy computation 
-                    dummy_theta = jnp.zeros((x_sim.shape[0], correction_model.log_diag_net.in_size if hasattr(correction_model, 'log_diag_net') else correction_model.local_cholesky_net.in_size))
-                    _, sigma_batch = correction_model(x_sim, dummy_theta)
-                else:
-                    _, sigma_batch = correction_model(x_sim)
-                # Entropy for diagonal Gaussian: H = 0.5 * Σ_i log(2πe * σ_i^2)
-                entropy_batch = 0.5 * jnp.sum(jnp.log(2 * jnp.pi * jnp.e * sigma_batch**2 + 1e-8), axis=-1)
-                return -jnp.mean(entropy_batch)
-            except:
-                return 0.0
-
-
-
-
-
-
 

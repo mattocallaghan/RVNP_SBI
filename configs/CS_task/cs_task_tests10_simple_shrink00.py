@@ -19,9 +19,9 @@ def get_config():
     config.training.workspace = 'output/cs_task_tests10_simple'
 
     # Small dataset parameters
-    config.model.K_obs_samples = 10
-    config.model.simulator_samples_per_theta = 10
-    config.training.final_epochs = 300
+    config.model.K_obs_samples = 32
+    config.model.simulator_samples_per_theta = 32
+    config.training.final_epochs = 3000
     config.training.final_posterior_epochs = 100
 
     return config
