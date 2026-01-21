@@ -11,11 +11,12 @@ def get_config():
     config.training = ConfigDict()
     config.training.batch_size = 16*2*2
     config.training.n_iters = 200           # Total number of training iterations.
-    config.training.use_dreg = False        # Use DReG (Doubly Reparameterized Gradient) for variance reduction
+    config.training.use_dreg = False        # Disable DReG initially to match NLPE behavior (was True)
     config.training.train=True   #T/F
     config.training.max_patience=80
     config.training.validation_split=0.1
     config.training.simulator_epochs = 100       # Number of epochs for simulator training (reduced from 200)
+    config.training.pretrain_epochs = 5       # Number of epochs for posterior pre-training (Stage 3)
     config.training.n_jitted_steps = 1        # Number of steps jitted together.
     config.training.log_freq = 20        # Log frequency (must be divisible by n_jitted_steps).
     config.training.snapshot_freq_for_preemption = 20
@@ -42,7 +43,17 @@ def get_config():
     config.model = ConfigDict()
     config.model.name = 'bnaf'                    # Options: 've' or 'nf'.
     config.model.activation='arctan'
-    config.model.initial_correction_variance = 1e-2  # Initial covariance diagonal values for SimpleCorrectionModel
+    config.model.initial_correction_variance = 0.00237  # Matches NLPE σ=0.0487 (was 1e-2)
+
+    # Parameter space transformation (RVNP methods only)
+    # When True: Apply logit transform to bounded priors for smoother optimization
+    # When False: Use standard soft penalty (default, backward compatible)
+    # Note: Only affects RVNP (mu_hybrid, simple). NPE/NNPE unaffected.
+    config.model.transform_param_space = False
+
+    # Fixed sample counts (no scheduling)
+    config.model.simulator_samples_per_theta = 10  # Number of simulator samples per theta (fixed)
+
     # Optimizer settings.
     config.optim = ConfigDict()
     config.optim.lr = 1e-3
@@ -52,6 +63,13 @@ def get_config():
     config.optim.weight_decay = 1e-4
     config.optim.warmup = 1000
     config.optim.grad_clip = 1.0
+
+    # Learning rate scheduler (enabled by default)
+    config.optim.use_lr_scheduler = True
+    config.optim.scheduler_initial_lr = 0.1      # Initial LR for scheduler
+    config.optim.scheduler_patience = 100        # Epochs to wait before reducing LR
+    config.optim.scheduler_factor = 0.1          # Multiply LR by this factor on reduction
+    config.optim.scheduler_min_lr = 1e-4         # Minimum LR (stop reducing)
 
     # Sampling settings.
     config.sampling = ConfigDict()

@@ -67,7 +67,7 @@ def get_config():
     config.data.num_iid = 1
     config.data.inference_simulations = 1
     config.data.inference_dataset = 'spectra_inference'
-    config.model.lambda_shrinkage = 0.0
+    config.model.lambda_shrinkage = 0.1  # Shrinkage prior on mean + covariance for NN models
     config.training.workspace = 'output/spectra_tests1_simple'
 
     #################################

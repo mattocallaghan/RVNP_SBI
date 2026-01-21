@@ -44,12 +44,11 @@ def create_correction_model(key, config, correction_dim: int, flow_dimension: in
     correction_type = getattr(config.model, 'correction_type', 'simple')
 
     if correction_type == 'simple':
-        initial_var = getattr(config.model, 'initial_correction_variance', -2)
-        initial_covariance = jnp.full(correction_dim, initial_var)
+        # Use default initialization: L[i,i] = 1.0 (unit variance)
+        # No initial_covariance passed - model will initialize with log(1.0) = 0.0 in log-space
         return SimpleCorrectionModel(
             key=key,
-            dim=correction_dim,
-            initial_covariance=initial_covariance
+            dim=correction_dim
         )
 
     elif correction_type == 'diagonal_neural':

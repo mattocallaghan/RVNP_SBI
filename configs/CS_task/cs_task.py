@@ -37,7 +37,7 @@ def get_config():
     config.model.nn_depth_bnaf = 5
     config.model.nn_block_dim = 52
     config.model.activation = 'tanh'
-    config.training.max_patience = 100
+    config.training.max_patience = 1000
     config.data.num_simulations = int(100000/(1-config.training.validation_split))
     config.training.train_embedding_first = False  # CS doesn't use embeddings
 
@@ -50,7 +50,7 @@ def get_config():
     config.optim.eps = 1e-8
     config.optim.weight_decay = 1e-5
     config.optim.warmup = 1000
-    config.optim.grad_clip = 10.0
+    config.optim.grad_clip = float('inf')  # Disabled - no gradient clipping
 
     #################################
     # EXPERIMENT DEFAULTS (commonly overridden)
@@ -61,7 +61,7 @@ def get_config():
     config.data.num_iid = 1
     config.data.inference_simulations = 1
     config.data.inference_dataset = 'CS_inference'
-    config.model.lambda_shrinkage = 0.0
+    config.model.lambda_shrinkage = 0.1  # Shrinkage prior on mean + covariance for NN models
     config.training.workspace = 'output/cs_task_tests1_simple'
 
     #################################
@@ -77,13 +77,14 @@ def get_config():
     config.training.warmup_epochs = 5
     config.training.final_epochs = 0
     config.training.final_posterior_epochs = 0
+    config.training.use_dreg = False  # Disable DReG initially to match NLPE (was True)
 
     #################################
     # RVNP-SPECIFIC PARAMETERS
     #################################
     # Variational posterior configuration
     config.model.lambda_variational = 1.0
-    config.model.K_obs_samples = 10  # Default for small datasets
+    config.model.K_obs_samples = 1  # Increased for better sampling diversity (matches NLPE)
     config.model.lambda_entropy = 0.0
     config.model.lambda_correlation = 0.0
     config.model.use_kl_term = True
@@ -110,6 +111,7 @@ def get_config():
     # Multi-stage training
     config.model.n_alternates = 2
     config.model.train_simulator = False
+    config.model.train_posterior_pretrain = True  # Stage 3: Pre-train posterior on simulated data
     config.model.train_correction_coarse = True
     config.model.train_posterior_widen = True
     config.model.train_joint_refinement = True
@@ -123,8 +125,8 @@ def get_config():
 
     # Simulator sampling
     config.model.use_simulator_sampling = True
-    config.model.simulator_samples_per_theta = 10  # Default for small datasets
-    config.model.initial_correction_variance = -3
+    config.model.simulator_samples_per_theta = 1  # Default for small datasets
+    config.model.initial_correction_variance = 0.00237  # Matches NLPE σ=0.0487 (was 1e-4)
 
     # Extra posterior parameters
     config.model.lambda_consistency = 0.0

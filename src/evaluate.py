@@ -206,7 +206,13 @@ class Evaluator:
         key, subkey = jr.split(key)
 
         # Sample theta from flow (proposal distribution)
-        theta_particles = flowclass.flow.sample(subkey, (n_particles,), condition=x_hat)
+        theta_latent = flowclass.flow.sample(subkey, (n_particles,), condition=x_hat)
+
+        # Transform to bounded space if parameter transformation is enabled
+        if hasattr(flowclass, 'param_transform') and flowclass.param_transform.enabled:
+            theta_particles = jax.vmap(flowclass.param_transform.inverse)(theta_latent)
+        else:
+            theta_particles = theta_latent
 
         # Compute importance weights
         def compute_weight(theta, key):
@@ -219,11 +225,20 @@ class Evaluator:
             )(x_sims)
             log_likelihood = jax.scipy.special.logsumexp(log_likelihood_terms) - jnp.log(n_sims_per_particle)
 
-            # Prior
+            # Prior (evaluated in bounded space)
             log_prior = flowclass.prior.log_prob(theta)
 
-            # Proposal
-            log_proposal = flowclass.flow.log_prob(theta, condition=x_hat)
+            # Proposal: log q(theta|x)
+            # If transform is enabled, need to account for Jacobian:
+            # log q(theta|x) = log q_z(z|x) - log|det J|
+            if hasattr(flowclass, 'param_transform') and flowclass.param_transform.enabled:
+                # Transform theta -> z for flow evaluation
+                z = flowclass.param_transform.forward(theta)
+                log_proposal_latent = flowclass.flow.log_prob(z, condition=x_hat)
+                log_det_jac = flowclass.param_transform.log_det_jacobian(z)
+                log_proposal = log_proposal_latent - log_det_jac
+            else:
+                log_proposal = flowclass.flow.log_prob(theta, condition=x_hat)
 
             # Importance weight: p(x|theta) * p(theta) / q(theta|x)
             return log_likelihood + log_prior - log_proposal
@@ -251,25 +266,40 @@ class Evaluator:
         flow,
         samples: jnp.ndarray,
         theta_true: jnp.ndarray,
-        x_cond: jnp.ndarray
+        x_cond: jnp.ndarray,
+        param_transform=None
     ) -> Tuple[jnp.ndarray, int, float]:
         """
         Compute HDI (Highest Density Interval) coverage statistics.
 
         Args:
             flow: Posterior flow
-            samples: Posterior samples
-            theta_true: True parameter value
+            samples: Posterior samples (in flow space)
+            theta_true: True parameter value (in flow space)
             x_cond: Conditioning observation
+            param_transform: Optional parameter transformation for Jacobian correction
 
         Returns:
             coverage: Binary coverage at 21 levels (0 to 100%)
             num_samples: Number of samples
             true_log_prob: Log probability of true parameter
         """
-        # Compute log densities
-        log_probs = flow.log_prob(samples, condition=x_cond)
-        true_log_prob = flow.log_prob(theta_true, condition=x_cond)
+        # Compute log densities in flow space
+        log_probs_flow = flow.log_prob(samples, condition=x_cond)
+        true_log_prob_flow = flow.log_prob(theta_true, condition=x_cond)
+
+        # Apply Jacobian correction if parameter transform is enabled
+        if param_transform is not None and param_transform.enabled:
+            # log q(θ|x) = log q_z(z|x) - log|det J|
+            # where J = dz/dθ is the Jacobian of forward transform
+            log_det_jac_samples = jax.vmap(param_transform.log_det_jacobian)(samples)
+            log_det_jac_true = param_transform.log_det_jacobian(theta_true)
+
+            log_probs = log_probs_flow - log_det_jac_samples
+            true_log_prob = true_log_prob_flow - log_det_jac_true
+        else:
+            log_probs = log_probs_flow
+            true_log_prob = true_log_prob_flow
 
         # Sort by density (highest first)
         sorted_log_probs = jnp.sort(log_probs)[::-1]
@@ -473,36 +503,86 @@ class Evaluator:
         """
         # Split observation
         theta_dim = self.config.model.flow_dimension
-        theta_true = observation[:theta_dim]
+        theta_true_normalized = observation[:theta_dim]  # Normalized space (from _load_data line 129)
+
+        # Denormalize to physical space for ACAUC and NRMSE
+        theta_true_physical = (
+            theta_true_normalized * self.stats['std'][:theta_dim] +
+            self.stats['mean'][:theta_dim]
+        )
+
         x_obs = observation[theta_dim:]
 
+        # Sample from flow (samples are in z-space if transform enabled, normalized space otherwise)
         if use_sir:
             # SIR evaluation
             resampled_theta, log_weights, ess, original_theta = self.sampling_importance_resampling(
                 flowclass, x_obs, n_particles=n_samples, key=key
             )
-            samples = resampled_theta
+            samples_flow_space = resampled_theta
             ess_value = float(ess)
         else:
             # Regular sampling
-            samples = flowclass.flow.sample(key, (n_samples,), condition=x_obs)
+            samples_flow_space = flowclass.flow.sample(key, (n_samples,), condition=x_obs)
             ess_value = 0.0
-
-        # Compute HDI coverage
+        plt.scatter(samples_flow_space[:,0], samples_flow_space[:,1], alpha=0.1)
+        plt.show()
+        # Transform to physical space for ACAUC and NRMSE
+        if self.config.model.transform_param_space == True:
+            # samples_flow_space is in z-space (unbounded)
+            # Transform z → θ_normalized using param_transform
+            samples_normalized = flowclass.param_transform.inverse(samples_flow_space)
+            # Then denormalize θ_normalized → θ_physical
+            samples_physical = (
+                samples_normalized * self.stats['std'][:theta_dim] +
+                self.stats['mean'][:theta_dim]
+            )
+            # For HDI coverage, also transform theta_true to z-space
+            theta_true_flow_space = flowclass.param_transform.forward(theta_true_normalized)
+        else:
+            # samples_flow_space is in normalized space
+            # Denormalize directly to physical space
+            samples_physical = (
+                samples_flow_space * self.stats['std'][:theta_dim] +
+                self.stats['mean'][:theta_dim]
+            )
+            # theta_true is already in flow's native space (normalized)
+            theta_true_flow_space = theta_true_normalized
+        plt.scatter(samples_physical[:,0], samples_physical[:,1], alpha=0.1)
+        plt.scatter(theta_true_physical[0], theta_true_physical[1], color='red')
+        plt.show()
+        # Compute HDI coverage with proper Jacobian handling
+        # Pass both samples and theta_true in flow's native space (z-space or normalized)
         coverage, num_samples, true_log_prob = self.compute_hdi_coverage(
-            flowclass.flow, samples, theta_true, x_obs
+            flowclass.flow,
+            samples_flow_space,      # z-space or normalized
+            theta_true_flow_space,   # z-space or normalized (matches samples)
+            x_obs,
+            param_transform=flowclass.param_transform if self.config.model.transform_param_space else None
         )
 
-        # Compute ACAUC
+        # Compute ACAUC in physical space
         acauc = self.compute_acauc(
-            samples=np.array(samples),
-            theta_true=np.array(theta_true),
+            samples=np.array(samples_physical),
+            theta_true=np.array(theta_true_physical),
             n_alpha_levels=100
         )
 
-        # Compute NRMSE
-        param_range = 1.0  # Normalized parameters
-        nrmse_per_sample = jnp.sqrt(jnp.mean(((samples - theta_true) / param_range)**2, axis=1))
+        # Compute NRMSE in physical space with correct normalization
+        # param_range should be (max - min) in physical space, not std
+        # Get bounds from flow (these are normalized bounds from training data)
+        theta_min_norm = flowclass.theta_min
+        theta_max_norm = flowclass.theta_max
+
+        # Convert to physical space: physical = normalized * std + mean
+        theta_min_physical = theta_min_norm * self.stats['std'][:theta_dim] + self.stats['mean'][:theta_dim]
+        theta_max_physical = theta_max_norm * self.stats['std'][:theta_dim] + self.stats['mean'][:theta_dim]
+        param_range = theta_max_physical - theta_min_physical
+
+        nrmse_per_sample = jnp.sqrt(jnp.mean(
+            ((samples_physical - theta_true_physical) / param_range)**2,
+            axis=1
+        ))
         nrmse = float(jnp.mean(nrmse_per_sample))
 
         return {
@@ -699,7 +779,7 @@ def main():
                        help='Use Sampling Importance Resampling')
     parser.add_argument('--n_samples', type=int, default=10000,
                        help='Number of posterior samples (default: 10000)')
-    parser.add_argument('--n_eval_points', type=int, default=100,
+    parser.add_argument('--n_eval_points', type=int, default=10,
                        help='Number of observations to evaluate (default: 100)')
     parser.add_argument('--save_dir', type=str, default='./output/evaluation',
                        help='Directory to save results (default: ./output/evaluation)')

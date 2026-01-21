@@ -252,7 +252,7 @@ class SimpleCorrectionModel(eqx.Module):
     Uses Cholesky parameterization Σ = L @ L.T for guaranteed positive definiteness.
     """
     L_raw: Array  # Shape: (dim, dim) - raw lower triangular parameters
-    dim: int      # Dimension of data
+    dim: int = eqx.static_field()  # static, not trainable
     
     def __init__(self, key: KeyArray, dim: int, initial_covariance: Array = None):
         """
@@ -261,36 +261,69 @@ class SimpleCorrectionModel(eqx.Module):
             dim: Dimension of data
             initial_covariance: Optional (dim,) array of initial diagonal variances
         """
-        # Initialize Cholesky factor L
+        # Initialize Cholesky factor L (now using exp(log_x) parameterization)
         if initial_covariance is not None:
             # Use data-driven initialization: start with diagonal matrix
-            L_init = jnp.diag(initial_covariance)
+            # initial_covariance contains target diagonal variances σ²[i]
+            # For diagonal Cholesky: diag(Σ) = diag(L @ L.T) = L[i,i]²
+            # So we need L[i,i] = sqrt(σ²[i])
+            # Since we use exp parameterization: L[i,i] = exp(log_diag_raw)
+            # Therefore: log_diag_raw = log(sqrt(σ²[i]))
+
+            # Ensure positive variances and compute target Cholesky diagonal
+            safe_variances = jnp.maximum(jnp.abs(initial_covariance), 1e-6)
+            target_L_diag = jnp.sqrt(safe_variances)
+
+            # Log-space initialization for exp parameterization
+            L_diag_raw = jnp.log(target_L_diag)
+            L_init = jnp.diag(L_diag_raw)
+
             # Add small random off-diagonal elements
-            L_init = L_init + jnp.tril(jax.random.normal(key, (dim, dim)) * jnp.exp(-4), k=-1)
+            # Scale by sqrt(min_variance) to keep off-diagonals proportional to diagonal
+            # This ensures Σ stays close to diagonal at initialization
+            off_diag_scale = jnp.sqrt(jnp.min(safe_variances)) * 0.1  # 10% of smallest std dev
+            L_init = L_init + jnp.tril(jax.random.normal(key, (dim, dim)) * off_diag_scale, k=-1)
             self.L_raw = L_init
-            print(f"🎯 Data-driven initialization: Using empirical covariance {initial_covariance}")
+            print(f"🎯 Data-driven initialization: Target variances {safe_variances}, L_diag_raw {L_diag_raw}, off_diag_scale {off_diag_scale:.8f}")
         else:
-            # Initialize as near-identity with small random perturbations
-            self.L_raw = jnp.eye(dim) + jnp.tril(jax.random.normal(key, (dim, dim)) * (-4), k=-1)
-            print("📋 Standard initialization: Using unit variance")
-        
+            # Standard initialization: L[i,i] = 1.0 (data space)
+            # Using exp parameterization: exp(log_diag_raw) = 1.0
+            # Therefore: log_diag_raw = log(1.0) = 0.0
+            init_log_diag = jnp.log(1.0)  # = 0.0
+            # Off-diagonals very small (0.001 scale) for near-zero off-diagonal covariance
+            self.L_raw = jnp.eye(dim) * init_log_diag + jnp.tril(jax.random.normal(key, (dim, dim)) * 0.001, k=-1)
+            print(f"📋 Standard initialization: L diagonal = 1.0 (log-space: {init_log_diag:.4f}), off-diag scale = 0.001")
+
         self.dim = dim
     
     def get_cholesky_factor(self) -> Array:
         """
         Get the Cholesky factor L ensuring lower triangular structure and positive diagonal.
-        
+
         Returns:
             L: Lower triangular Cholesky factor (dim, dim)
         """
-        # Ensure lower triangular structure
-        L = jnp.tril(self.L_raw)
-        
-        # Ensure positive diagonal using softplus
-        diag_entries = jnp.diag(L)
-        positive_diag = jax.nn.softplus(diag_entries) + 1e-6  # Ensure > 0
-        L = L.at[jnp.diag_indices(self.dim)].set(positive_diag)
-        
+        # Build L directly with correct gradient flow:
+        # - Off-diagonal: lower triangular of L_raw
+        # - Diagonal: exp(log_diag) with L_raw storing log-space values
+        # Non-centered parameterization avoids funnel geometry
+
+        # Get off-diagonal mask and diagonal mask
+        lower_tri_mask = jnp.tril(jnp.ones((self.dim, self.dim)), k=-1)  # k=-1 excludes diagonal
+        diag_mask = jnp.eye(self.dim)
+
+        # Off-diagonal part (directly from L_raw)
+        L_off_diag = self.L_raw * lower_tri_mask
+
+        # Diagonal part (exp applied to log-space diagonal of L_raw)
+        log_diag_raw = jnp.diag(self.L_raw)  # Extract log-space diagonal from L_raw
+        log_diag_clamped = jnp.clip(log_diag_raw, -10.0, jnp.log(15.0))  # Clamp to [exp(-10), 15]
+        positive_diag = jnp.exp(log_diag_clamped)
+        L_diag = jnp.diag(positive_diag)
+
+        # Combine: off-diagonal + diagonal
+        L = L_off_diag + L_diag
+
         return L
     
     def get_covariance_matrix(self) -> Array:
@@ -449,13 +482,14 @@ class HybridCorrectionModel(eqx.Module):
         """Convert flat parameter array to diagonal matrix with positive entries.
         
         Args:
-            flat_params: Diagonal parameters (dim,)
-            
+            flat_params: Diagonal parameters in log-space (dim,)
+
         Returns:
             L_diag: Diagonal matrix with positive diagonal (dim, dim)
         """
-        # Apply softplus to ensure positivity
-        positive_diag = jax.nn.softplus(flat_params) + 1e-6
+        # Apply exp to log-space parameters (non-centered parameterization)
+        # Note: clipping should be done before calling this method
+        positive_diag = jnp.exp(flat_params)
         L_diag = jnp.diag(positive_diag)
         return L_diag
     
@@ -479,14 +513,16 @@ class HybridCorrectionModel(eqx.Module):
         """Get the hybrid Cholesky factor L_hybrid(theta) = L_global(off-diag) + L_local(diag)"""
         # Get global Cholesky factor (off-diagonal only)
         L_global = self._get_global_cholesky_factor()
-        
-        # Get local diagonal factor from neural network
-        local_diagonal_params = self.local_cholesky_net(theta)
-        L_local = self._flat_to_diagonal(local_diagonal_params)
-        
+
+        # Get local diagonal factor from neural network (outputs log-space)
+        log_diag_params = self.local_cholesky_net(theta)
+        # Clip log-space parameters to ensure diagonal elements in [exp(-10), 15]
+        log_diag_clamped = jnp.clip(log_diag_params, -10.0, jnp.log(15.0))
+        L_local = self._flat_to_diagonal(log_diag_clamped)
+
         # Combine global off-diagonal and local diagonal
         L_hybrid = L_global + L_local
-        
+
         return L_hybrid
     
     @eqx.filter_jit  
@@ -1031,29 +1067,43 @@ class MuHybridCorrectionModel(eqx.Module):
         self.dim = output_dim
     
     def _flat_to_diagonal(self, flat_params: Array) -> Array:
-        """Convert flat parameter array to diagonal matrix with positive entries."""
-        positive_diag = jax.nn.softplus(flat_params) + 1e-6
+        """Convert flat parameter array to diagonal matrix with positive entries.
+
+        Args:
+            flat_params: Diagonal parameters in log-space (dim,)
+
+        Returns:
+            L_diag: Diagonal matrix with positive diagonal (dim, dim)
+        """
+        # Apply exp to log-space parameters (non-centered parameterization)
+        # Note: clipping should be done before calling this method
+        positive_diag = jnp.exp(flat_params)
         L_diag = jnp.diag(positive_diag)
         return L_diag
-    
+
     def _get_global_cholesky_factor(self) -> Array:
-        """Get global Cholesky factor from raw parameters."""
+        """Get global Cholesky factor from raw parameters (non-centered parameterization)."""
         L_global = jnp.tril(self.L_global_raw)  # Ensure lower triangular
-        # Make diagonal entries positive via softplus
+        # Make diagonal entries positive via exp (log-space parameterization)
         diag_mask = jnp.eye(self.dim)
         off_diag_mask = 1.0 - diag_mask
-        diag_part = diag_mask * jax.nn.softplus(jnp.diag(self.L_global_raw)) + 1e-6
+        # Extract diagonal, clip in log-space, then exp
+        log_diag_raw = jnp.diag(self.L_global_raw)
+        log_diag_clamped = jnp.clip(log_diag_raw, -10.0, jnp.log(15.0))
+        diag_part = diag_mask * jnp.exp(log_diag_clamped)
         off_diag_part = off_diag_mask * L_global
         return jnp.diag(diag_part) + off_diag_part
-    
+
     def _get_hybrid_cholesky_factor(self, theta: Array) -> Array:
         """Get hybrid Cholesky factor L_hybrid(θ) = L_global + diag(sqrt(σ_local(θ)))."""
         L_global = self._get_global_cholesky_factor()
-        
-        # Get local diagonal scaling from theta
-        local_diagonal_params = self.local_cholesky_net(theta)
-        L_diagonal = self._flat_to_diagonal(local_diagonal_params)
-        
+
+        # Get local diagonal scaling from theta (neural network outputs log-space)
+        log_diag_params = self.local_cholesky_net(theta)
+        # Clip log-space parameters to ensure diagonal elements in [exp(-10), 15]
+        log_diag_clamped = jnp.clip(log_diag_params, -10.0, jnp.log(15.0))
+        L_diagonal = self._flat_to_diagonal(log_diag_clamped)
+
         # Hybrid combination: global structure + local diagonal scaling
         L_hybrid = L_global + L_diagonal
         return L_hybrid
@@ -1170,55 +1220,61 @@ class MuHybridCorrectionModel(eqx.Module):
     def log_prob(self, x_hat: Array, x: Array, theta: Array) -> Array:
         """
         Compute log probability log r_ψ(x̂|x,θ) with global and theta-dependent mean shifts.
-        
+
+        Uses Cholesky factor directly (no redundant decomposition) for numerical stability.
+
         Args:
             x_hat: Corrected observations (batch_size, dim) or (dim,)
             x: Simulator outputs (batch_size, dim) or (dim,)
             theta: Parameters (batch_size, theta_dim) or (theta_dim,)
-            
+
         Returns:
             log_prob: Log probabilities (batch_size,) or scalar
         """
-        mu, Sigma = self(x, theta)
-        
         # Handle both single samples and batches
         squeeze_output = False
         if x_hat.ndim == 1:
             x_hat = x_hat[None, :]  # Add batch dimension
-            mu = mu[None, :]
-            if Sigma.ndim == 2:
-                Sigma = Sigma[None, :, :]
+            x = x[None, :]
+            theta = theta[None, :]
             squeeze_output = True
-        
+
         batch_size = x_hat.shape[0]
-        
+
+        # Compute mean shifts (avoid redundant covariance computation)
         if batch_size == 1:
-            # Single sample case - direct computation
-            L = jnp.linalg.cholesky(Sigma[0] + 1e-6 * jnp.eye(self.dim))
-            diff_vec = (x_hat[0] - mu[0]).reshape(-1)
-            y_single = jax.scipy.linalg.solve_triangular(L, diff_vec, lower=True)
-            
-            log_prob = -0.5 * jnp.sum(y_single**2)
-            log_prob -= jnp.sum(jnp.log(jnp.diag(L)))
+            mean_shift = self.get_mean_shift(theta[0])
+            mu = x[0] + mean_shift
+        else:
+            mean_shifts = jax.vmap(self.get_mean_shift)(theta)
+            mu = x + mean_shifts
+
+        if batch_size == 1:
+            # Single sample case - use Cholesky factor directly
+            L_hybrid = self._get_hybrid_cholesky_factor(theta[0])
+            diff = x_hat[0] - mu
+            y = jax.scipy.linalg.solve_triangular(L_hybrid, diff, lower=True)
+
+            log_prob = -0.5 * jnp.sum(y**2)
+            log_prob -= jnp.sum(jnp.log(jnp.diag(L_hybrid)))
             log_prob -= 0.5 * self.dim * jnp.log(2 * jnp.pi)
             log_prob = jnp.array([log_prob])
         else:
-            # Batch case - vectorized computation
-            L_batch = jax.vmap(lambda S: jnp.linalg.cholesky(S + 1e-6 * jnp.eye(self.dim)))(Sigma)
+            # Batch case - vectorized Cholesky factors
+            L_batch = jax.vmap(self._get_hybrid_cholesky_factor)(theta)
             diff = x_hat - mu  # (batch_size, dim)
-            
-            def solve_single(L_i, diff_i):
-                return jax.scipy.linalg.solve_triangular(L_i, diff_i, lower=True)
-            
-            y_batch = jax.vmap(solve_single)(L_batch, diff)
-            
-            log_prob = -0.5 * jnp.sum(y_batch**2, axis=-1)
-            log_prob -= jnp.sum(jnp.log(jnp.diagonal(L_batch, axis1=-2, axis2=-1)), axis=-1)
+
+            y_batch = jax.vmap(
+                lambda L, d: jax.scipy.linalg.solve_triangular(L, d, lower=True)
+            )(L_batch, diff)
+
+            log_prob = -0.5 * jnp.sum(y_batch**2, axis=1)
+            log_prob -= jnp.sum(jnp.log(jnp.diagonal(L_batch, axis1=1, axis2=2)), axis=1)
             log_prob -= 0.5 * self.dim * jnp.log(2 * jnp.pi)
-        
+
         if squeeze_output:
             log_prob = log_prob[0]
-            
+
         return log_prob
     
     @eqx.filter_jit

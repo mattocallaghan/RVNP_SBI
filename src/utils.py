@@ -74,22 +74,34 @@ def flatten_dict(config):
 
 
 
-def get_optimizer(config):
-    """Returns a flax optimizer object based on `config`."""
+def get_optimizer(config, lr_override=None):
+    """Returns a flax optimizer object based on `config`.
+
+    Args:
+        config: Configuration object containing optimizer settings
+        lr_override: Optional learning rate override for dynamic scheduling.
+                    If provided, this LR is used instead of config.optim.lr.
+
+    Returns:
+        Optax optimizer (chain of transformations)
+    """
+    # Use override LR if provided, otherwise use config
+    effective_lr = lr_override if lr_override is not None else config.optim.lr
+
     if config.optim.optimizer.lower() == "adam":
         if hasattr(config.optim, "linear_decay_steps"):  # for progressive distillation
             stable_training_schedule = optax.linear_schedule(
-                init_value=config.optim.lr,
+                init_value=effective_lr,
                 end_value=0.0,
                 transition_steps=config.optim.linear_decay_steps,
             )
         else:
-            stable_training_schedule = optax.constant_schedule(config.optim.lr)
+            stable_training_schedule = optax.constant_schedule(effective_lr)
         schedule = optax.join_schedules(
             [
                 optax.linear_schedule(
                     init_value=0,
-                    end_value=config.optim.lr,
+                    end_value=effective_lr,
                     transition_steps=config.optim.warmup,
                 ),
                 stable_training_schedule,

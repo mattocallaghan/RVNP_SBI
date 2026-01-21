@@ -237,12 +237,21 @@ class CSTaskPrior(BasePrior):
     def log_prob(self, theta: Array) -> Array:
         """
         Soft uniform prior with hard cutoffs for CS task parameters.
-        
+
         Uses universal soft uniform penalty implementation from BasePrior.
-        
+        This provides differentiable boundary enforcement for bounded parameter spaces.
+
+        When transform_param_space = False (NLPE mode):
+            - Soft penalty enforces bounds via exponential penalties
+            - Prior is added outside logsumexp in loss function
+
+        When transform_param_space = True (RVNP mode):
+            - Soft penalty still computed (doesn't hurt, still differentiable)
+            - Prior is added inside logsumexp with Jacobian adjustment
+
         Args:
             theta: Parameter values (..., theta_dim)
-            
+
         Returns:
             log_prob: Log probability density (...,)
         """

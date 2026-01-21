@@ -1,3 +1,7 @@
 2026-01-13 20:55:07,294 [INFO] Generated 44 experiments
 2026-01-13 20:55:07,560 [INFO] Generated 44 experiments
 2026-01-13 20:55:07,822 [INFO] Generated 44 experiments
+2026-01-14 17:22:59,680 [WARNING] Config not found for Spectra RVNP-simple nobs=1000
+2026-01-14 17:22:59,680 [WARNING] Config not found for Spectra RVNP-NN nobs=1000
+2026-01-14 17:22:59,680 [INFO] Generated 44 experiments
+2026-01-14 17:22:59,921 [INFO] Generated 46 experiments

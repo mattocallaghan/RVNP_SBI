@@ -62,7 +62,7 @@ def get_config():
     config.data.num_iid = 1
     config.data.inference_simulations = 1
     config.data.inference_dataset = 'SIR_inference'
-    config.model.lambda_shrinkage = 0.0
+    config.model.lambda_shrinkage = 0.1  # Shrinkage prior on mean + covariance for NN models
     config.training.workspace = 'output/sir_tests1_simple'
 
     #################################
@@ -111,6 +111,7 @@ def get_config():
     # Multi-stage training
     config.model.n_alternates = 2
     config.model.train_simulator = False
+    config.model.train_posterior_pretrain = True  # Stage 3: Pre-train posterior on simulated data
     config.model.train_correction_coarse = True
     config.model.train_posterior_widen = True
     config.model.train_joint_refinement = True
@@ -125,7 +126,7 @@ def get_config():
     # Simulator sampling
     config.model.use_simulator_sampling = True
     config.model.simulator_samples_per_theta = 10  # Default for small datasets
-    config.model.initial_correction_variance = -3
+    config.model.initial_correction_variance = 0.1  # Small initial variance
 
     # Extra posterior parameters
     config.model.lambda_consistency = 0.0

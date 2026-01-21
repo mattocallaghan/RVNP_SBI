@@ -26,7 +26,8 @@ def get_config():
     config.model.correction_type='simple'  # 'simple', 'diagonal_neural', or 'hybrid'
     config.model.lambda_shrinkage=0.0
     config.model.train_simulator=True       # Stage 2: Train simulator flow p(x_sim|θ)
-    
+    config.model.train_posterior_pretrain = True  # Stage 3: Pre-train posterior on simulated data
+
     #################################
     # constants
     #################################
@@ -134,7 +135,7 @@ def get_config():
     # where τ = contrastive_temperature = 0.01 (sharp attention focusing on nearest samples)
     config.model.use_simulator_sampling=True        # Enable fresh simulator sampling during correction stages
     config.model.simulator_samples_per_theta=32     # Sample 25 times per theta (reduced for speed while maintaining diversity)
-    config.model.initial_correction_variance=-3.0
+    config.model.initial_correction_variance = 0.1  # Small initial variance
     
     ###########
     #extra posteror loss parameters
