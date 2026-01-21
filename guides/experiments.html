@@ -1,0 +1,328 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Running Experiments &mdash; RVNP-SBI 1.0.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=8d563738"></script>
+      <script src="../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Adding Custom Tasks" href="custom_tasks.html" />
+    <link rel="prev" title="Guides" href="index.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            RVNP-SBI
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../getting_started.html">Getting Started</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="../getting_started.html#installation">Installation</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="../getting_started.html#prerequisites">Prerequisites</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../getting_started.html#python-dependencies">Python Dependencies</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../getting_started.html#julia-setup">Julia Setup</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../getting_started.html#data-directory">Data Directory</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="../getting_started.html#basic-usage">Basic Usage</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="../getting_started.html#training-a-single-experiment">Training a Single Experiment</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../getting_started.html#running-all-experiments">Running All Experiments</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="../getting_started.html#available-tasks">Available Tasks</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../getting_started.html#methods">Methods</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="../getting_started.html#rvnp-nn-primary">RVNP-NN (Primary)</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../getting_started.html#rvnp-simple">RVNP-simple</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../getting_started.html#npe-baseline">NPE (Baseline)</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="../getting_started.html#configuration">Configuration</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../getting_started.html#next-steps">Next Steps</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../theory.html">Mathematical Theory</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="../theory.html#problem-setup">Problem Setup</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="../theory.html#simulation-based-inference">Simulation-Based Inference</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../theory.html#model-misspecification">Model Misspecification</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="../theory.html#standard-methods">Standard Methods</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="../theory.html#neural-posterior-estimation-npe">Neural Posterior Estimation (NPE)</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="../theory.html#rvnp-approach">RVNP Approach</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="../theory.html#error-model">Error Model</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../theory.html#importance-weighted-variational-objective">Importance-Weighted Variational Objective</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../theory.html#multi-stage-training">Multi-Stage Training</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="../theory.html#calibration-metrics">Calibration Metrics</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../theory.html#implementation-details">Implementation Details</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="../theory.html#normalizing-flows">Normalizing Flows</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../theory.html#optimization">Optimization</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../theory.html#shrinkage-prior-tuning">Shrinkage Prior Tuning</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="../theory.html#references">References</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../api/index.html">API Reference</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="../api/index.html#core-modules">Core Modules</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="../api/models.html">Models</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="../api/models.html#correction-models">Correction Models</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="../api/losses.html">Loss Functions</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="../api/losses.html#simplifiedposteriorloss">SimplifiedPosteriorLoss</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../api/losses.html#maximumlikelihoodloss">MaximumLikelihoodLoss</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../api/losses.html#shannonlossembedding">ShannonLossEmbedding</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="../api/evaluate.html">Evaluation</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="../api/evaluate.html#evaluator">Evaluator</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../api/evaluate.html#metrics-computed">Metrics Computed</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="../api/flows.html">Normalizing Flows</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="../api/flows.html#flow-models">Flow Models</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="../api/datasets.html">Datasets</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="../api/datasets.html#data-loading">Data Loading</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../api/datasets.html#task-utilities">Task Utilities</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="../api/index.html#models">Models</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="../api/index.html#correction-models">Correction Models</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../api/index.html#embeddings">Embeddings</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../api/index.html#priors">Priors</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1 current"><a class="reference internal" href="index.html">Guides</a><ul class="current">
+<li class="toctree-l2 current"><a class="current reference internal" href="#">Running Experiments</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#experimental-matrix">Experimental Matrix</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#main-experiments">Main Experiments</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#well-specified-experiments">Well-Specified Experiments</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#ablation-study">Ablation Study</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#results">Results</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#resumability">Resumability</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#troubleshooting">Troubleshooting</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#out-of-memory">Out of Memory</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#missing-data">Missing Data</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#config-not-found">Config Not Found</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="custom_tasks.html">Adding Custom Tasks</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="custom_tasks.html#overview">Overview</a></li>
+<li class="toctree-l3"><a class="reference internal" href="custom_tasks.html#step-1-implement-simulator">Step 1: Implement Simulator</a></li>
+<li class="toctree-l3"><a class="reference internal" href="custom_tasks.html#step-2-add-dataset-loading">Step 2: Add Dataset Loading</a></li>
+<li class="toctree-l3"><a class="reference internal" href="custom_tasks.html#step-3-create-configuration">Step 3: Create Configuration</a></li>
+<li class="toctree-l3"><a class="reference internal" href="custom_tasks.html#high-dimensional-observations">High-Dimensional Observations</a></li>
+<li class="toctree-l3"><a class="reference internal" href="custom_tasks.html#model-misspecification">Model Misspecification</a></li>
+<li class="toctree-l3"><a class="reference internal" href="custom_tasks.html#step-4-test">Step 4: Test</a></li>
+<li class="toctree-l3"><a class="reference internal" href="custom_tasks.html#example-two-moons">Example: Two Moons</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">RVNP-SBI</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="index.html">Guides</a></li>
+      <li class="breadcrumb-item active">Running Experiments</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/guides/experiments.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="running-experiments">
+<h1>Running Experiments<a class="headerlink" href="#running-experiments" title="Link to this heading"></a></h1>
+<p>This guide covers running the full experimental matrix and analyzing results.</p>
+<section id="experimental-matrix">
+<h2>Experimental Matrix<a class="headerlink" href="#experimental-matrix" title="Link to this heading"></a></h2>
+<p>The codebase is designed to run ~60 experiments organized as:</p>
+<ul class="simple">
+<li><p><strong>Tasks</strong>: 4 (CS, SIR, Pendulum, Spectra)</p></li>
+<li><p><strong>Methods</strong>: 3 (RVNP-simple, RVNP-NN, NPE)</p></li>
+<li><p><strong>Nobs</strong>: 5 (1, 10, 100, 1000, 10000)</p></li>
+</ul>
+</section>
+<section id="main-experiments">
+<h2>Main Experiments<a class="headerlink" href="#main-experiments" title="Link to this heading"></a></h2>
+<p>Run all main experiments:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">bash</span> <span class="n">run_experiments_colab</span><span class="o">.</span><span class="n">sh</span>
+</pre></div>
+</div>
+<p>Check progress:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">bash</span> <span class="n">run_experiments_colab</span><span class="o">.</span><span class="n">sh</span> <span class="o">--</span><span class="n">status</span>
+</pre></div>
+</div>
+<p>Run specific task:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">bash</span> <span class="n">run_experiments_colab</span><span class="o">.</span><span class="n">sh</span> <span class="o">--</span><span class="n">task</span><span class="o">=</span><span class="n">CS</span>
+</pre></div>
+</div>
+<p>Generate plots only:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">bash</span> <span class="n">run_experiments_colab</span><span class="o">.</span><span class="n">sh</span> <span class="o">--</span><span class="n">plots</span><span class="o">-</span><span class="n">only</span>
+</pre></div>
+</div>
+</section>
+<section id="well-specified-experiments">
+<h2>Well-Specified Experiments<a class="headerlink" href="#well-specified-experiments" title="Link to this heading"></a></h2>
+<p>Test RVNP performance without misspecification:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">bash</span> <span class="n">run_wellspec_experiments</span><span class="o">.</span><span class="n">sh</span>
+</pre></div>
+</div>
+<p>This validates that RVNP doesn’t harm performance when the simulator is correct.</p>
+</section>
+<section id="ablation-study">
+<h2>Ablation Study<a class="headerlink" href="#ablation-study" title="Link to this heading"></a></h2>
+<p>Run ablation study (CS task only, Nobs=100):</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">bash</span> <span class="n">run_ablation_study</span><span class="o">.</span><span class="n">sh</span>
+</pre></div>
+</div>
+<p>Studies two factors:</p>
+<ol class="arabic simple">
+<li><p><strong>Parameter Size</strong>: Effect of <code class="docutils literal notranslate"><span class="pre">nn_block_dim</span></code> (16, 32, 52, 128, 256)</p></li>
+<li><p><strong>Shrinkage Prior</strong>: Effect of <code class="docutils literal notranslate"><span class="pre">lambda_shrinkage</span></code> (0.0, 0.01, 0.1, 1.0, 10.0)</p></li>
+</ol>
+</section>
+<section id="results">
+<h2>Results<a class="headerlink" href="#results" title="Link to this heading"></a></h2>
+<p>Results are saved to:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">experiment_results/metrics_database.csv</span></code> - All metrics</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">publication_plots/</span></code> - 4-panel comparison plots per task</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">output/{workspace}/</span></code> - Individual experiment checkpoints</p></li>
+</ul>
+<p>Metrics in database:</p>
+<ul class="simple">
+<li><p><strong>ACAUC</strong> - Primary calibration metric</p></li>
+<li><p><strong>AEPC</strong> - Discrete calibration</p></li>
+<li><p><strong>LPP</strong> - Log posterior probability</p></li>
+<li><p><strong>NRMSE</strong> - Parameter estimation error</p></li>
+<li><p><strong>ESS</strong> - Effective sample size (SIR only)</p></li>
+<li><p><strong>Training time</strong> - Component-wise breakdown</p></li>
+</ul>
+</section>
+<section id="resumability">
+<h2>Resumability<a class="headerlink" href="#resumability" title="Link to this heading"></a></h2>
+<p>All experiment runners are resumable via <code class="docutils literal notranslate"><span class="pre">pipeline_state.json</span></code>.</p>
+<p>If experiments are interrupted (e.g., Colab timeout), simply re-run:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">bash</span> <span class="n">run_experiments_colab</span><span class="o">.</span><span class="n">sh</span>
+</pre></div>
+</div>
+<p>The pipeline will skip completed experiments and continue from where it stopped.</p>
+</section>
+<section id="troubleshooting">
+<h2>Troubleshooting<a class="headerlink" href="#troubleshooting" title="Link to this heading"></a></h2>
+<section id="out-of-memory">
+<h3>Out of Memory<a class="headerlink" href="#out-of-memory" title="Link to this heading"></a></h3>
+<p>Run by task instead of all at once:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">bash</span> <span class="n">run_experiments_colab</span><span class="o">.</span><span class="n">sh</span> <span class="o">--</span><span class="n">task</span><span class="o">=</span><span class="n">CS</span>
+<span class="n">bash</span> <span class="n">run_experiments_colab</span><span class="o">.</span><span class="n">sh</span> <span class="o">--</span><span class="n">task</span><span class="o">=</span><span class="n">SIR</span>
+<span class="n">bash</span> <span class="n">run_experiments_colab</span><span class="o">.</span><span class="n">sh</span> <span class="o">--</span><span class="n">task</span><span class="o">=</span><span class="n">Pendulum</span>
+<span class="n">bash</span> <span class="n">run_experiments_colab</span><span class="o">.</span><span class="n">sh</span> <span class="o">--</span><span class="n">task</span><span class="o">=</span><span class="n">Spectra</span>
+</pre></div>
+</div>
+</section>
+<section id="missing-data">
+<h3>Missing Data<a class="headerlink" href="#missing-data" title="Link to this heading"></a></h3>
+<p>Data is auto-generated on first run:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">mkdir</span> <span class="o">-</span><span class="n">p</span> <span class="n">Data</span>
+</pre></div>
+</div>
+</section>
+<section id="config-not-found">
+<h3>Config Not Found<a class="headerlink" href="#config-not-found" title="Link to this heading"></a></h3>
+<p>Verify all configs exist:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">python</span> <span class="n">scripts</span><span class="o">/</span><span class="n">verify_configs</span><span class="o">.</span><span class="n">py</span>
+</pre></div>
+</div>
+<p>For complete experiment configuration details, see the <a class="reference external" href="https://github.com/USERNAME/RVNP_SBI/blob/main/README.md">README</a>.</p>
+</section>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="index.html" class="btn btn-neutral float-left" title="Guides" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="custom_tasks.html" class="btn btn-neutral float-right" title="Adding Custom Tasks" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, O&#39;Callaghan et al.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

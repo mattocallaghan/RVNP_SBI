@@ -1,0 +1,482 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mathematical Theory &mdash; RVNP-SBI 1.0.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=8d563738"></script>
+      <script src="_static/doctools.js?v=9bcbadda"></script>
+      <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script>window.MathJax = {"tex": {"inlineMath": [["$", "$"], ["\\(", "\\)"]], "displayMath": [["$$", "$$"], ["\\[", "\\]"]]}, "options": {"processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
+      <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="API Reference" href="api/index.html" />
+    <link rel="prev" title="Getting Started" href="getting_started.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            RVNP-SBI
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="getting_started.html">Getting Started</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="getting_started.html#installation">Installation</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="getting_started.html#prerequisites">Prerequisites</a></li>
+<li class="toctree-l3"><a class="reference internal" href="getting_started.html#python-dependencies">Python Dependencies</a></li>
+<li class="toctree-l3"><a class="reference internal" href="getting_started.html#julia-setup">Julia Setup</a></li>
+<li class="toctree-l3"><a class="reference internal" href="getting_started.html#data-directory">Data Directory</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="getting_started.html#basic-usage">Basic Usage</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="getting_started.html#training-a-single-experiment">Training a Single Experiment</a></li>
+<li class="toctree-l3"><a class="reference internal" href="getting_started.html#running-all-experiments">Running All Experiments</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="getting_started.html#available-tasks">Available Tasks</a></li>
+<li class="toctree-l2"><a class="reference internal" href="getting_started.html#methods">Methods</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="getting_started.html#rvnp-nn-primary">RVNP-NN (Primary)</a></li>
+<li class="toctree-l3"><a class="reference internal" href="getting_started.html#rvnp-simple">RVNP-simple</a></li>
+<li class="toctree-l3"><a class="reference internal" href="getting_started.html#npe-baseline">NPE (Baseline)</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="getting_started.html#configuration">Configuration</a></li>
+<li class="toctree-l2"><a class="reference internal" href="getting_started.html#next-steps">Next Steps</a></li>
+</ul>
+</li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Mathematical Theory</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#problem-setup">Problem Setup</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#simulation-based-inference">Simulation-Based Inference</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#model-misspecification">Model Misspecification</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#standard-methods">Standard Methods</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#neural-posterior-estimation-npe">Neural Posterior Estimation (NPE)</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#rvnp-approach">RVNP Approach</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#error-model">Error Model</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#importance-weighted-variational-objective">Importance-Weighted Variational Objective</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#multi-stage-training">Multi-Stage Training</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#calibration-metrics">Calibration Metrics</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#implementation-details">Implementation Details</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#normalizing-flows">Normalizing Flows</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#optimization">Optimization</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#shrinkage-prior-tuning">Shrinkage Prior Tuning</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#references">References</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="api/index.html">API Reference</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="api/index.html#core-modules">Core Modules</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="api/models.html">Models</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="api/models.html#correction-models">Correction Models</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="api/losses.html">Loss Functions</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="api/losses.html#simplifiedposteriorloss">SimplifiedPosteriorLoss</a></li>
+<li class="toctree-l4"><a class="reference internal" href="api/losses.html#maximumlikelihoodloss">MaximumLikelihoodLoss</a></li>
+<li class="toctree-l4"><a class="reference internal" href="api/losses.html#shannonlossembedding">ShannonLossEmbedding</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="api/evaluate.html">Evaluation</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="api/evaluate.html#evaluator">Evaluator</a></li>
+<li class="toctree-l4"><a class="reference internal" href="api/evaluate.html#metrics-computed">Metrics Computed</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="api/flows.html">Normalizing Flows</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="api/flows.html#flow-models">Flow Models</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="api/datasets.html">Datasets</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="api/datasets.html#data-loading">Data Loading</a></li>
+<li class="toctree-l4"><a class="reference internal" href="api/datasets.html#task-utilities">Task Utilities</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="api/index.html#models">Models</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="api/index.html#correction-models">Correction Models</a></li>
+<li class="toctree-l3"><a class="reference internal" href="api/index.html#embeddings">Embeddings</a></li>
+<li class="toctree-l3"><a class="reference internal" href="api/index.html#priors">Priors</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="guides/index.html">Guides</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="guides/experiments.html">Running Experiments</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="guides/experiments.html#experimental-matrix">Experimental Matrix</a></li>
+<li class="toctree-l3"><a class="reference internal" href="guides/experiments.html#main-experiments">Main Experiments</a></li>
+<li class="toctree-l3"><a class="reference internal" href="guides/experiments.html#well-specified-experiments">Well-Specified Experiments</a></li>
+<li class="toctree-l3"><a class="reference internal" href="guides/experiments.html#ablation-study">Ablation Study</a></li>
+<li class="toctree-l3"><a class="reference internal" href="guides/experiments.html#results">Results</a></li>
+<li class="toctree-l3"><a class="reference internal" href="guides/experiments.html#resumability">Resumability</a></li>
+<li class="toctree-l3"><a class="reference internal" href="guides/experiments.html#troubleshooting">Troubleshooting</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="guides/experiments.html#out-of-memory">Out of Memory</a></li>
+<li class="toctree-l4"><a class="reference internal" href="guides/experiments.html#missing-data">Missing Data</a></li>
+<li class="toctree-l4"><a class="reference internal" href="guides/experiments.html#config-not-found">Config Not Found</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="guides/custom_tasks.html">Adding Custom Tasks</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="guides/custom_tasks.html#overview">Overview</a></li>
+<li class="toctree-l3"><a class="reference internal" href="guides/custom_tasks.html#step-1-implement-simulator">Step 1: Implement Simulator</a></li>
+<li class="toctree-l3"><a class="reference internal" href="guides/custom_tasks.html#step-2-add-dataset-loading">Step 2: Add Dataset Loading</a></li>
+<li class="toctree-l3"><a class="reference internal" href="guides/custom_tasks.html#step-3-create-configuration">Step 3: Create Configuration</a></li>
+<li class="toctree-l3"><a class="reference internal" href="guides/custom_tasks.html#high-dimensional-observations">High-Dimensional Observations</a></li>
+<li class="toctree-l3"><a class="reference internal" href="guides/custom_tasks.html#model-misspecification">Model Misspecification</a></li>
+<li class="toctree-l3"><a class="reference internal" href="guides/custom_tasks.html#step-4-test">Step 4: Test</a></li>
+<li class="toctree-l3"><a class="reference internal" href="guides/custom_tasks.html#example-two-moons">Example: Two Moons</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">RVNP-SBI</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Mathematical Theory</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/theory.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="mathematical-theory">
+<h1>Mathematical Theory<a class="headerlink" href="#mathematical-theory" title="Link to this heading"></a></h1>
+<p>This page provides the mathematical foundation for RVNP (Robust Variational Neural Posterior) estimation.</p>
+<section id="problem-setup">
+<h2>Problem Setup<a class="headerlink" href="#problem-setup" title="Link to this heading"></a></h2>
+<section id="simulation-based-inference">
+<h3>Simulation-Based Inference<a class="headerlink" href="#simulation-based-inference" title="Link to this heading"></a></h3>
+<p>In simulation-based inference (SBI), we have:</p>
+<ul class="simple">
+<li><p>Parameters of interest: <span class="math notranslate nohighlight">\(\theta \in \Theta \subseteq \mathbb{R}^d\)</span></p></li>
+<li><p>Observations: <span class="math notranslate nohighlight">\(x \in \mathcal{X} \subseteq \mathbb{R}^p\)</span></p></li>
+<li><p>Simulator: <span class="math notranslate nohighlight">\(x \sim p(x|\theta)\)</span> (can generate data given parameters)</p></li>
+<li><p>Prior: <span class="math notranslate nohighlight">\(p(\theta)\)</span></p></li>
+<li><p>Goal: Infer posterior <span class="math notranslate nohighlight">\(p(\theta|x_{\text{obs}})\)</span></p></li>
+</ul>
+<p>The challenge: We can sample from <span class="math notranslate nohighlight">\(p(x|\theta)\)</span> but cannot evaluate its density.</p>
+</section>
+<section id="model-misspecification">
+<h3>Model Misspecification<a class="headerlink" href="#model-misspecification" title="Link to this heading"></a></h3>
+<p><strong>Key Problem</strong>: The simulator <span class="math notranslate nohighlight">\(p_{\text{sim}}(x|\theta)\)</span> may differ from the true data-generating process <span class="math notranslate nohighlight">\(p_{\text{true}}(x|\theta)\)</span>.</p>
+<p>This leads to:</p>
+<ul class="simple">
+<li><p>Biased posterior estimates</p></li>
+<li><p>Poor calibration (under/over-coverage)</p></li>
+<li><p>Incorrect scientific conclusions</p></li>
+</ul>
+<p><strong>Examples of Misspecification</strong>:</p>
+<ul class="simple">
+<li><p>Missing friction term in physical simulator</p></li>
+<li><p>Simplified transmission dynamics in epidemiological models</p></li>
+<li><p>Incorrect spatial dynamics in cell distribution models</p></li>
+</ul>
+</section>
+</section>
+<section id="standard-methods">
+<h2>Standard Methods<a class="headerlink" href="#standard-methods" title="Link to this heading"></a></h2>
+<section id="neural-posterior-estimation-npe">
+<h3>Neural Posterior Estimation (NPE)<a class="headerlink" href="#neural-posterior-estimation-npe" title="Link to this heading"></a></h3>
+<p>Standard NPE learns an amortized posterior <span class="math notranslate nohighlight">\(q_\phi(\theta|x)\)</span> by maximizing:</p>
+<div class="math notranslate nohighlight">
+\[\mathcal{L}_{\text{NPE}} = \mathbb{E}_{\theta \sim p(\theta)} \mathbb{E}_{x \sim p_{\text{sim}}(x|\theta)} [\log q_\phi(\theta|x)]\]</div>
+<p><strong>Assumption</strong>: <span class="math notranslate nohighlight">\(p_{\text{sim}}(x|\theta) = p_{\text{true}}(x|\theta)\)</span> (no misspecification)</p>
+<p><strong>Failure Mode</strong>: When misspecified, NPE learns <span class="math notranslate nohighlight">\(q_\phi(\theta|x)\)</span> that matches the <em>wrong</em> simulator, leading to biased inference on real observations.</p>
+</section>
+</section>
+<section id="rvnp-approach">
+<h2>RVNP Approach<a class="headerlink" href="#rvnp-approach" title="Link to this heading"></a></h2>
+<section id="error-model">
+<h3>Error Model<a class="headerlink" href="#error-model" title="Link to this heading"></a></h3>
+<p>RVNP introduces an <strong>error model</strong> <span class="math notranslate nohighlight">\(p_\alpha(x_{\text{obs}}|x_{\text{sim}},\theta)\)</span> that bridges the simulation-to-reality gap:</p>
+<div class="math notranslate nohighlight">
+\[p_\alpha(x_{\text{obs}}|x_{\text{sim}},\theta) = \mathcal{N}(x_{\text{obs}}; x_{\text{sim}}, \xi(\theta;\alpha))\]</div>
+<p>where:</p>
+<ul class="simple">
+<li><p><span class="math notranslate nohighlight">\(x_{\text{sim}}\)</span>: Simulator output</p></li>
+<li><p><span class="math notranslate nohighlight">\(x_{\text{obs}}\)</span>: Real observation</p></li>
+<li><p><span class="math notranslate nohighlight">\(\xi(\theta;\alpha)\)</span>: Covariance matrix parametrized by <span class="math notranslate nohighlight">\(\alpha\)</span></p></li>
+<li><p><span class="math notranslate nohighlight">\(\theta\)</span>: Parameters of interest</p></li>
+</ul>
+<p><strong>Paper Formulation</strong> (O’Callaghan et al., 2025, Equations 15-16):</p>
+<p>RVNP (Default):</p>
+<div class="math notranslate nohighlight">
+\[\xi(\theta;\alpha) = \text{Diag}(\text{NN}(\theta;\alpha)) + \Lambda\]</div>
+<p>where <span class="math notranslate nohighlight">\(\text{NN}(\theta;\alpha)\)</span> outputs diagonal components and <span class="math notranslate nohighlight">\(\Lambda\)</span> are learned global off-diagonal components.</p>
+<p>RVNP-G (Global):</p>
+<div class="math notranslate nohighlight">
+\[\xi(\theta;\alpha) = \alpha\]</div>
+<p>A full-rank Gaussian covariance matrix (via Cholesky decomposition) that is constant across <span class="math notranslate nohighlight">\(\theta\)</span>.</p>
+<p><strong>Implementation Note</strong>: The current implementation uses a <strong>neural mean + neural covariance</strong> variant (<code class="docutils literal notranslate"><span class="pre">correction_type='mu_hybrid'</span></code>) that differs from the paper:</p>
+<div class="math notranslate nohighlight">
+\[\begin{split}p_\psi(\hat{x}|x,\theta) &amp;= \mathcal{N}(\hat{x}; \mu_\psi(x,\theta), \Sigma_\psi(\theta)) \\
+\mu_\psi(x,\theta) &amp;= x + \mu_{\text{global}} + \mu_\theta(\theta) \\
+\Sigma_\psi(\theta) &amp;= L_{\text{hybrid}}(\theta) L_{\text{hybrid}}(\theta)^T\end{split}\]</div>
+<p>This includes a learnable neural mean shift <span class="math notranslate nohighlight">\(\mu_\theta(\theta)\)</span> regularized by the shrinkage prior <span class="math notranslate nohighlight">\(\mathcal{R}_{\text{shrink}}(\psi) = \frac{1}{K}\sum_k \|\mu_\theta(\theta_k)\|^2\)</span>.</p>
+</section>
+<section id="importance-weighted-variational-objective">
+<h3>Importance-Weighted Variational Objective<a class="headerlink" href="#importance-weighted-variational-objective" title="Link to this heading"></a></h3>
+<p>RVNP jointly trains the posterior <span class="math notranslate nohighlight">\(q_\phi(\theta|\hat{x})\)</span> and correction <span class="math notranslate nohighlight">\(r_\psi(\hat{x}|x,\theta)\)</span> using an <strong>importance-weighted objective</strong>:</p>
+<div class="math notranslate nohighlight">
+\[\mathcal{L}(\phi,\psi) = -\mathcal{L}_{\text{IWAE}}(\phi,\psi) + \lambda_{\text{shrinkage}} \cdot \mathcal{R}_{\text{shrink}}(\psi)\]</div>
+<p><strong>Loss Computation</strong> (all inside <code class="docutils literal notranslate"><span class="pre">_kl_divergence</span></code> method):</p>
+<p>Given observed data <span class="math notranslate nohighlight">\(x_{\text{obs}}\)</span>:</p>
+<ol class="arabic">
+<li><p><strong>Sample</strong> <span class="math notranslate nohighlight">\(\theta_1, \ldots, \theta_K \sim q_\phi(\theta|x_{\text{obs}})\)</span> (K samples per observation)</p></li>
+<li><p><strong>For each</strong> <span class="math notranslate nohighlight">\(\theta_k\)</span>, <strong>sample</strong> <span class="math notranslate nohighlight">\(x_{\text{sim}}^{(1)}, \ldots, x_{\text{sim}}^{(N)} \sim p_{\text{sim}}(x|\theta_k)\)</span> (N samples per theta)</p></li>
+<li><p><strong>Compute Importance-Weighted Autoencoder Loss</strong>:</p>
+<div class="math notranslate nohighlight">
+\[\mathcal{L}_{\text{IWAE}} = \frac{1}{K} \sum_{k=1}^{K} \log \left( \frac{1}{N} \sum_{n=1}^{N} \frac{r_\psi(x_{\text{obs}}|x_{\text{sim}}^{(n)}, \theta_k) \, p(\theta_k)}{q_\phi(\theta_k|x_{\text{obs}})} \right)\]</div>
+<p>Equivalently (using logsumexp for numerical stability):</p>
+<div class="math notranslate nohighlight">
+\[\mathcal{L}_{\text{IWAE}} = \frac{1}{K} \sum_{k=1}^{K} \left[ \text{logsumexp}_{n=1}^{N} \left( \log r_\psi(x_{\text{obs}}|x_{\text{sim}}^{(n)}, \theta_k) \right) - \log N - \log q_\phi(\theta_k|x_{\text{obs}}) + \log p(\theta_k) \right]\]</div>
+<p>where:</p>
+<ul class="simple">
+<li><p><span class="math notranslate nohighlight">\(r_\psi(x_{\text{obs}}|x_{\text{sim}}, \theta)\)</span>: Correction model likelihood</p></li>
+<li><p><span class="math notranslate nohighlight">\(p(\theta)\)</span>: Prior distribution</p></li>
+<li><p><span class="math notranslate nohighlight">\(q_\phi(\theta|x_{\text{obs}})\)</span>: Posterior approximation</p></li>
+<li><p>logsumexp provides tighter bound than single-sample ELBO</p></li>
+</ul>
+</li>
+<li><p><strong>Compute Shrinkage Regularization</strong>:</p>
+<div class="math notranslate nohighlight">
+\[\mathcal{R}_{\text{shrink}}(\psi) = \frac{1}{K} \sum_{k=1}^{K} \|\mu_\theta(\theta_k)\|^2\]</div>
+<p>where <span class="math notranslate nohighlight">\(\theta_k\)</span> are the SAME samples from step 1, and <span class="math notranslate nohighlight">\(\mu_\theta(\theta)\)</span> is the neural mean correction function.</p>
+<ul class="simple">
+<li><p>Regularizes neural mean shift toward zero</p></li>
+<li><p>Prevents overfitting when mean misspecification is minimal</p></li>
+<li><p><strong>Important</strong>: Only penalizes the mean neural network output, NOT the covariance</p></li>
+</ul>
+</li>
+<li><p><strong>Total Loss</strong>:</p>
+<div class="math notranslate nohighlight">
+\[\mathcal{L}(\phi,\psi) = -\mathcal{L}_{\text{IWAE}} + \lambda_{\text{shrinkage}} \cdot \mathcal{R}_{\text{shrink}}(\psi)\]</div>
+</li>
+</ol>
+</section>
+<section id="multi-stage-training">
+<h3>Multi-Stage Training<a class="headerlink" href="#multi-stage-training" title="Link to this heading"></a></h3>
+<p>RVNP uses a 3-stage training pipeline:</p>
+<p><strong>Stage 1: Embedding Training</strong> (optional, for high-dimensional observations)</p>
+<ul class="simple">
+<li><p><strong>Data</strong>: Pre-generated simulations <span class="math notranslate nohighlight">\((\theta, x) \sim p(\theta)p_{\text{sim}}(x|\theta)\)</span></p></li>
+<li><p><strong>Trains</strong>: Embedding network <span class="math notranslate nohighlight">\(f_\omega(x)\)</span>, discriminator, decoder</p></li>
+<li><p><strong>Method</strong>: InfoMax (mutual information maximization)</p></li>
+<li><p><strong>Output</strong>: Trained <span class="math notranslate nohighlight">\(f_\omega\)</span> that compresses high-dimensional <span class="math notranslate nohighlight">\(x\)</span> to low-dimensional embeddings</p></li>
+</ul>
+<p><strong>Stage 2: Simulator Flow Training</strong></p>
+<ul class="simple">
+<li><p><strong>Data</strong>: Pre-generated simulations <span class="math notranslate nohighlight">\((\theta, x) \sim p(\theta)p_{\text{sim}}(x|\theta)\)</span></p></li>
+<li><p><strong>Trains</strong>: Simulator flow <span class="math notranslate nohighlight">\(p_{\text{sim}}(x|\theta)\)</span></p></li>
+<li><p><strong>Method</strong>: Maximum likelihood on simulated data</p></li>
+<li><p><strong>Output</strong>: Trained simulator that generates <span class="math notranslate nohighlight">\(x \sim p_{\text{sim}}(x|\theta)\)</span> for any <span class="math notranslate nohighlight">\(\theta\)</span></p></li>
+</ul>
+<p><strong>Stage 3: Joint Posterior + Correction Training</strong></p>
+<ul class="simple">
+<li><p><strong>Data</strong>: ONLY observed data <span class="math notranslate nohighlight">\(x_{\text{obs}}\)</span> (no pre-generated simulations used)</p></li>
+<li><p><strong>Trains</strong>: Posterior <span class="math notranslate nohighlight">\(q_\phi(\theta|\hat{x})\)</span> and correction <span class="math notranslate nohighlight">\(r_\psi(\hat{x}|x,\theta)\)</span> jointly</p></li>
+<li><p><strong>Method</strong>: RVNP Loss (<span class="math notranslate nohighlight">\(-\mathcal{L}_{\text{IWAE}}\)</span> + shrinkage regularization)</p></li>
+<li><p><strong>Training Loop</strong>:</p>
+<ul>
+<li><p>Pass <span class="math notranslate nohighlight">\(x_{\text{obs}}\)</span> to RVNPLoss function</p></li>
+<li><p>ALL sampling happens inside <code class="docutils literal notranslate"><span class="pre">_kl_divergence</span></code> method:</p>
+<ol class="arabic simple">
+<li><p>Sample <span class="math notranslate nohighlight">\(\theta_1, \ldots, \theta_K \sim q_\phi(\theta|x_{\text{obs}})\)</span> from current posterior</p></li>
+<li><p>For each <span class="math notranslate nohighlight">\(\theta_k\)</span>, sample <span class="math notranslate nohighlight">\(x_{\text{sim}}^{(n)} \sim p_{\text{sim}}(x|\theta_k)\)</span> from trained simulator (Stage 2)</p></li>
+<li><p>Compute <span class="math notranslate nohighlight">\(\mathcal{L}_{\text{IWAE}}\)</span> using correction model <span class="math notranslate nohighlight">\(r_\psi(x_{\text{obs}}|x_{\text{sim}},\theta)\)</span></p></li>
+<li><p>Compute shrinkage: <span class="math notranslate nohighlight">\(\mathcal{R}_{\text{shrink}}(\psi) = \frac{1}{K}\sum_{k}\|\mu_\theta(\theta_k)\|^2\)</span> using sampled <span class="math notranslate nohighlight">\(\theta_k\)</span></p></li>
+<li><p>Return <span class="math notranslate nohighlight">\(-\mathcal{L}_{\text{IWAE}} + \lambda_{\text{shrinkage}} \cdot \mathcal{R}_{\text{shrink}}(\psi)\)</span></p></li>
+</ol>
+</li>
+<li><p>Update <span class="math notranslate nohighlight">\(\phi\)</span> (posterior) and <span class="math notranslate nohighlight">\(\psi\)</span> (correction) via gradient descent</p></li>
+<li><p><strong>Key point</strong>: No sampling in training loop - only <span class="math notranslate nohighlight">\(x_{\text{obs}}\)</span> passed to loss</p></li>
+</ul>
+</li>
+</ul>
+<p>This staged approach ensures:</p>
+<ul class="simple">
+<li><p>Stable learning of complex components</p></li>
+<li><p>Efficient reuse of trained simulator in Stage 3</p></li>
+<li><p>No need for massive pre-generated datasets in final training stage</p></li>
+</ul>
+</section>
+</section>
+<section id="calibration-metrics">
+<h2>Calibration Metrics<a class="headerlink" href="#calibration-metrics" title="Link to this heading"></a></h2>
+<p><strong>Paper Metrics</strong> (O’Callaghan et al., 2025, Section 4.1):</p>
+<p>The paper uses the following metrics:</p>
+<dl>
+<dt><strong>AEPC</strong> (Average Expected Posterior Coverage):</dt><dd><div class="math notranslate nohighlight">
+\[\alpha := \int_0^1 [\text{EPC}(\gamma) - \gamma] d\gamma\]</div>
+<p>where <span class="math notranslate nohighlight">\(\text{EPC}(\gamma) = \mathbb{E}_{\theta^*,x_{\text{obs}}}[\mathbb{1}\{\theta^* \in \text{HDR}_{q_\phi(\theta|x_{\text{obs}})}(1-\gamma)\}]\)</span></p>
+</dd>
+<dt><strong>AEMPC</strong> (Average Expected Marginal Posterior Coverage):</dt><dd><div class="math notranslate nohighlight">
+\[\alpha_{(\text{marginal})} := \frac{1}{m} \sum_{i=1}^m \int_0^1 [\text{EMPC}(\gamma)_i - \gamma] d\gamma\]</div>
+</dd>
+<dt><strong>LPP</strong> (Log Posterior Probability):</dt><dd><div class="math notranslate nohighlight">
+\[\text{LPP} := \mathbb{E}[\log q_\phi(\theta^*|x_{\text{obs}})]\]</div>
+</dd>
+<dt><strong>NRMSE</strong> (Normalized Root Mean Square Error):</dt><dd><div class="math notranslate nohighlight">
+\[\text{NRMSE} = \frac{1}{N_{\text{obs}}} \sum_{j=1}^{N_{\text{obs}}} \frac{\sqrt{\frac{1}{S}\sum_{s=1}^S (\theta_j^* - \theta_j^{(s)})^2}}{\text{Std}(\theta_{\text{prior}})}\]</div>
+</dd>
+</dl>
+<p><strong>Implementation Metrics</strong>:</p>
+<p>The current implementation uses <strong>ACAUC</strong> (Average Coverage Area Under Curve) as the primary calibration metric, which differs from the paper:</p>
+<div class="math notranslate nohighlight">
+\[\text{ACAUC} = \frac{1}{d} \sum_{j=1}^{d} \int_{0}^{1} \mathbb{1}[\theta_j^* \in C_\alpha^j] \, d\alpha\]</div>
+<p>where:</p>
+<ul class="simple">
+<li><p><span class="math notranslate nohighlight">\(d\)</span>: Parameter dimension</p></li>
+<li><p><span class="math notranslate nohighlight">\(\theta_j^*\)</span>: True value of parameter <span class="math notranslate nohighlight">\(j\)</span></p></li>
+<li><p><span class="math notranslate nohighlight">\(C_\alpha^j\)</span>: <span class="math notranslate nohighlight">\(\alpha\)</span>-level credible interval for dimension <span class="math notranslate nohighlight">\(j\)</span></p></li>
+</ul>
+<p><strong>Interpretation</strong>:</p>
+<ul class="simple">
+<li><p>ACAUC = 1.0: Perfect calibration</p></li>
+<li><p>ACAUC &lt; 1.0: Under-coverage (overconfident posterior)</p></li>
+<li><p>ACAUC &gt; 1.0: Over-coverage (too conservative)</p></li>
+</ul>
+<dl class="simple">
+<dt><strong>ESS</strong> (Effective Sample Size):</dt><dd><p>Sample efficiency (SIR task only)</p>
+</dd>
+</dl>
+</section>
+<section id="implementation-details">
+<h2>Implementation Details<a class="headerlink" href="#implementation-details" title="Link to this heading"></a></h2>
+<section id="normalizing-flows">
+<h3>Normalizing Flows<a class="headerlink" href="#normalizing-flows" title="Link to this heading"></a></h3>
+<p>Both <span class="math notranslate nohighlight">\(p_{\text{sim}}(x|\theta)\)</span> and <span class="math notranslate nohighlight">\(q_\phi(\theta|x)\)</span> are implemented as normalizing flows:</p>
+<ul class="simple">
+<li><p><strong>Architecture</strong>: Rational quadratic splines (RQS)</p></li>
+<li><p><strong>Invertibility</strong>: Enables efficient density evaluation and sampling</p></li>
+<li><p><strong>Expressiveness</strong>: Universal approximation of continuous distributions</p></li>
+</ul>
+</section>
+<section id="optimization">
+<h3>Optimization<a class="headerlink" href="#optimization" title="Link to this heading"></a></h3>
+<ul class="simple">
+<li><p><strong>Optimizer</strong>: Adam with learning rate <span class="math notranslate nohighlight">\(10^{-3}\)</span></p></li>
+<li><p><strong>Batch size</strong>: 1024</p></li>
+<li><p><strong>Gradient clipping</strong>: Max norm 10.0</p></li>
+<li><p><strong>Early stopping</strong>: Patience 100 epochs on validation loss</p></li>
+</ul>
+</section>
+<section id="shrinkage-prior-tuning">
+<h3>Shrinkage Prior Tuning<a class="headerlink" href="#shrinkage-prior-tuning" title="Link to this heading"></a></h3>
+<p>Recommended values for <span class="math notranslate nohighlight">\(\lambda_{\text{shrinkage}}\)</span>:</p>
+<ul class="simple">
+<li><p>0.0: No regularization (may overfit)</p></li>
+<li><p>0.01: Weak shrinkage (mild misspecification)</p></li>
+<li><p>0.1: Medium shrinkage (moderate misspecification, <strong>default</strong>)</p></li>
+<li><p>1.0: Strong shrinkage (minimal expected misspecification)</p></li>
+<li><p>10.0: Very strong (near well-specified)</p></li>
+</ul>
+<p>Tune via cross-validation on held-out calibration data.</p>
+</section>
+</section>
+<section id="references">
+<h2>References<a class="headerlink" href="#references" title="Link to this heading"></a></h2>
+<dl class="simple">
+<dt><strong>Primary Paper</strong>:</dt><dd><p>O’Callaghan, Matthew, Mandel, Kaisey S., and Gilmore, Gerry (2025).
+“Robust variational neural posterior estimation for simulation-based inference.”
+<em>arXiv preprint arXiv:2509.05724</em>.</p>
+</dd>
+<dt><strong>Related Work</strong>:</dt><dd><ul class="simple">
+<li><p>Hermans, J., et al. (2021). “Likelihood-free inference with amortized approximate
+likelihood ratios.” <em>ICML 2021</em>.</p></li>
+<li><p>Ward, D., et al. (2022). “Robust neural posterior estimation and statistical model
+criticism.” <em>NeurIPS 2022</em>.</p></li>
+<li><p>Greenberg, D., et al. (2019). “Automatic posterior transformation for likelihood-free
+inference.” <em>ICML 2019</em>.</p></li>
+</ul>
+</dd>
+<dt><strong>Normalizing Flows</strong>:</dt><dd><ul class="simple">
+<li><p>Durkan, C., et al. (2019). “Neural spline flows.” <em>NeurIPS 2019</em>.</p></li>
+</ul>
+</dd>
+</dl>
+<p>For implementation details, see <a class="reference internal" href="api/index.html"><span class="doc">API Reference</span></a>.</p>
+<p>For practical usage, see the <a class="reference external" href="https://github.com/USERNAME/RVNP_SBI/blob/main/README.md">README</a>.</p>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="getting_started.html" class="btn btn-neutral float-left" title="Getting Started" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="api/index.html" class="btn btn-neutral float-right" title="API Reference" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, O&#39;Callaghan et al.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
